@@ -23,6 +23,10 @@ arithmetic and you want to own them.
   real, `Esc` to come back out
 - `Shift 1` fit all, `Shift 2` fit selected, `Shift 0` 100%, `+`/`-` zoom steps,
   `Tab` to cycle, arrows to nudge (`Shift` for 10)
+- Resize a selected frame from any of its eight handles, with a live size badge
+- Snapping: edges and centres onto other frames, with red alignment lines, plus
+  whole-pixel rounding on any axis the geometry did not claim. `Ctrl`/`Cmd`
+  held mid-drag bypasses it
 - Camera and layout saved to `localStorage`, with a reset in the HUD
 - Frames cull offscreen without unmounting, so screen state survives
 
@@ -42,11 +46,26 @@ const { active, visible, frameSize, clientToFrame, setEscapeInterceptor } = useS
 - Global shortcuts gate on `active`
 - `setEscapeInterceptor` claims `Esc` when the screen has something to close
 
+## The hard cases
+
+The third screen, **The hard cases**, is the one to open when changing
+anything. Every section states what the right answer is, so you can check
+rather than remember:
+
+1. What the lab tells the screen, and what changes when
+2. Pointer coordinates, showing the contract's answer next to the raw window
+   one so the wrong number is visible as wrong
+3. A drag that must stay under the pointer at 25% and at 200%
+4. The frame's own scroll, next to `window.scrollY`, which is always 0
+5. A shortcut that only fires while the screen is locked into
+6. A frame loop that must freeze when culled, unfocused or backgrounded
+7. Escape arbitration: the dialog gets it first, the lab gets it second
+8. Long content, so culling has something to keep mounted
+
 ## Still to build
 
-Frame resize handles, snapping and alignment guides, undo, rulers and guides,
-Alt-hover distance measurement, and the dev-server file operations that make
-duplicate and delete real.
+Undo, rulers and guides, Alt-hover distance measurement, and the dev-server
+file operations that make duplicate and delete real.
 
 ## Development
 

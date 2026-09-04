@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ScreenProvider, type ScreenState } from '../screen-context';
+import type { Handle } from './snapping';
 import type { ScreenDef } from '../screens';
 import styles from './lab.module.css';
 
@@ -19,6 +20,7 @@ export interface FrameProps {
   onSelect: (id: string) => void;
   onLockIn: (id: string) => void;
   onDragStart: (id: string, e: React.PointerEvent) => void;
+  onResizeStart: (id: string, handle: Handle, e: React.PointerEvent) => void;
   registerEscape: (id: string, fn: (() => boolean) | null) => void;
 }
 
@@ -33,7 +35,7 @@ export interface FrameProps {
 function ScreenFrameInner(props: FrameProps) {
   const {
     def, position, size, selected, active, dimmed, visible, zoom,
-    readCanvas, onSelect, onLockIn, onDragStart, registerEscape,
+    readCanvas, onSelect, onLockIn, onDragStart, onResizeStart, registerEscape,
   } = props;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -142,6 +144,32 @@ function ScreenFrameInner(props: FrameProps) {
 
         {dimmed && <div className={styles.dim} />}
       </div>
+
+      {/*
+        On the group, outside the frame. The frame clips and contains its
+        content, so a handle straddling its edge, which is what every edge
+        handle does, would be swallowed by the clip.
+      */}
+      {selected && !active && (
+        <div className={styles.handles}>
+          {(['n', 's', 'e', 'w'] as const).map((dir) => (
+            <div
+              key={dir}
+              className={styles.edge}
+              data-dir={dir}
+              onPointerDown={(e) => onResizeStart(def.id, dir, e)}
+            />
+          ))}
+          {(['nw', 'ne', 'sw', 'se'] as const).map((dir) => (
+            <div
+              key={dir}
+              className={styles.corner}
+              data-dir={dir}
+              onPointerDown={(e) => onResizeStart(def.id, dir, e)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

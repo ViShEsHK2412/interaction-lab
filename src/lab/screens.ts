@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import { PlaygroundScreen } from '../screens/playground/playground-screen';
 import { FeedScreen } from '../screens/feed/feed-screen';
+import { StressScreen } from '../screens/stress/stress-screen';
 
 /**
  * The registry. Adding a screen is a component plus one entry here, and
@@ -44,5 +45,13 @@ export const SCREENS: ScreenDef[] = [
     height: 900,
     defaultPosition: { x: 1640, y: 0 },
     component: PlaygroundScreen,
+  },
+  {
+    id: 'stress',
+    name: 'The hard cases',
+    width: 1440,
+    height: 900,
+    defaultPosition: { x: 3280, y: 0 },
+    component: StressScreen,
   },
 ];

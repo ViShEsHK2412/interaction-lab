@@ -189,3 +189,68 @@
 @media (prefers-reduced-motion: reduce) {
   .hud { transition: none; }
 }
+
+/*
+ * Resize handles live on the GROUP, never on the frame. The frame clips and
+ * contains its content, so any hit area straddling its edge, which is exactly
+ * what an edge handle is, gets swallowed whole.
+ *
+ * Everything here divides by --inv-zoom so it stays the same size on screen at
+ * any zoom. A handle that scales with the canvas is untouchable zoomed out and
+ * a slab zoomed in.
+ */
+.handles { position: absolute; inset: 0; }
+
+.edge {
+  position: absolute;
+  /* Straddles the edge, so you can grab from just inside or just outside. */
+  --reach: calc(6px * var(--inv-zoom, 1));
+}
+
+.edge[data-dir='n'] { left: 0; right: 0; top: calc(var(--reach) * -1); height: calc(var(--reach) * 2); cursor: ns-resize; }
+.edge[data-dir='s'] { left: 0; right: 0; bottom: calc(var(--reach) * -1); height: calc(var(--reach) * 2); cursor: ns-resize; }
+.edge[data-dir='w'] { top: 0; bottom: 0; left: calc(var(--reach) * -1); width: calc(var(--reach) * 2); cursor: ew-resize; }
+.edge[data-dir='e'] { top: 0; bottom: 0; right: calc(var(--reach) * -1); width: calc(var(--reach) * 2); cursor: ew-resize; }
+
+.corner {
+  position: absolute;
+  width: calc(8px * var(--inv-zoom, 1));
+  height: calc(8px * var(--inv-zoom, 1));
+  border: calc(1.5px * var(--inv-zoom, 1)) solid #0d99ff;
+  border-radius: calc(2px * var(--inv-zoom, 1));
+  background: #fff;
+  --half: calc(4px * var(--inv-zoom, 1));
+}
+
+.corner[data-dir='nw'] { top: calc(var(--half) * -1); left: calc(var(--half) * -1); cursor: nwse-resize; }
+.corner[data-dir='ne'] { top: calc(var(--half) * -1); right: calc(var(--half) * -1); cursor: nesw-resize; }
+.corner[data-dir='sw'] { bottom: calc(var(--half) * -1); left: calc(var(--half) * -1); cursor: nesw-resize; }
+.corner[data-dir='se'] { bottom: calc(var(--half) * -1); right: calc(var(--half) * -1); cursor: nwse-resize; }
+
+/*
+ * Snap lines are drawn in screen space, not in the layer, for the same reason
+ * the labels are: anything inside the transformed layer is part of its raster.
+ * A 1px line that scaled would be invisible zoomed out.
+ */
+.snapLine {
+  position: absolute;
+  background: #f24822;
+  pointer-events: none;
+}
+
+.snapLine[data-axis='x'] { width: 1px; }
+.snapLine[data-axis='y'] { height: 1px; }
+
+/* The size readout that tracks under a frame while it is resized. */
+.sizeBadge {
+  position: absolute;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #0d99ff;
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, 8px);
+}

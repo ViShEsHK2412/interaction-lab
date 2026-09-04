@@ -7,6 +7,10 @@ import {
 import { bindCanvasInput, transformFor } from './core/use-canvas-input';
 import { clearLayout, createSaver, loadLayout, type StoredLayout } from './core/persistence';
 import { ScreenFrame } from './core/screen-frame';
+import {
+  resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
+  type Handle, type SnapLine,
+} from './core/snapping';
 import { SCREENS } from './screens';
 import styles from './core/lab.module.css';
 
@@ -96,6 +100,57 @@ export function InteractionLab() {
   const frameRef = useRef<number>(0);
   const idleRef = useRef<number>(0);
   const gesturingRef = useRef(false);
+
+  /**
+   * Snap lines and the size badge are written straight to DOM rather than
+   * rendered, for the same reason the camera is: they change on every
+   * pointermove of a drag, and a React render per move is exactly the cost the
+   * whole architecture exists to avoid.
+   */
+  const snapLayerRef = useRef<HTMLDivElement | null>(null);
+  const badgeRef = useRef<HTMLDivElement | null>(null);
+
+  const drawSnapLines = useCallback((lines: readonly SnapLine[]) => {
+    const host = snapLayerRef.current;
+    if (!host) return;
+    const c = store.get();
+    const r = rectRef.current;
+    host.replaceChildren(...lines.map((line) => {
+      const el = document.createElement('div');
+      el.className = styles.snapLine ?? '';
+      el.dataset['axis'] = line.axis;
+      const at = (line.at + (line.axis === 'x' ? c.x : c.y)) * c.z;
+      const from = (line.from + (line.axis === 'x' ? c.y : c.x)) * c.z;
+      const to = (line.to + (line.axis === 'x' ? c.y : c.x)) * c.z;
+      if (line.axis === 'x') {
+        el.style.left = `${at}px`;
+        el.style.top = `${Math.min(from, to)}px`;
+        el.style.height = `${Math.abs(to - from)}px`;
+      } else {
+        el.style.top = `${at}px`;
+        el.style.left = `${Math.min(from, to)}px`;
+        el.style.width = `${Math.abs(to - from)}px`;
+      }
+      void r;
+      return el;
+    }));
+  }, [store]);
+
+  const clearSnapLines = useCallback(() => {
+    snapLayerRef.current?.replaceChildren();
+    const badge = badgeRef.current;
+    if (badge) badge.style.display = 'none';
+  }, []);
+
+  const showSizeBadge = useCallback((boxNow: Box) => {
+    const badge = badgeRef.current;
+    if (!badge) return;
+    const c = store.get();
+    badge.style.display = 'block';
+    badge.style.left = `${(boxNow.x + boxNow.width / 2 + c.x) * c.z}px`;
+    badge.style.top = `${(boxNow.y + boxNow.height + c.y) * c.z}px`;
+    badge.textContent = `${Math.round(boxNow.width)} × ${Math.round(boxNow.height)}`;
+  }, [store]);
 
   const [culled, setCulled] = useState<Record<string, boolean>>({});
   const culledRef = useRef(culled);
@@ -261,29 +316,60 @@ export function InteractionLab() {
 
   const dragRef = useRef<{ id: string; startX: number; startY: number; box: Box } | null>(null);
 
+  /** Everything except the one being moved, which cannot snap to itself. */
+  const othersOf = (id: string): Box[] =>
+    Object.entries(layoutRef.current).filter(([k]) => k !== id).map(([, b]) => b);
+
+  /** Write a frame's geometry straight to its element, mid-gesture. */
+  const paintFrame = useCallback((id: string, boxNow: Box) => {
+    const el = document.querySelector<HTMLElement>(`[data-screen-id="${id}"].${styles.group}`);
+    if (!el) return;
+    el.style.transform = `translate(${boxNow.x}px, ${boxNow.y}px)`;
+    el.style.width = `${boxNow.width}px`;
+    el.style.height = `${boxNow.height}px`;
+  }, []);
+
+  /** One place both gestures end, so nothing can commit half of it. */
+  const commitGesture = useCallback((id: string, boxNow: Box) => {
+    layoutRef.current = { ...layoutRef.current, [id]: boxNow };
+    setLayout({ ...layoutRef.current });
+    clearSnapLines();
+    persist();
+    recull();
+  }, [clearSnapLines, persist, recull]);
+
   const onDragStart = useCallback((id: string, e: React.PointerEvent) => {
     const box = layoutRef.current[id];
     if (!box || modeRef.current !== 'explore') return;
     e.stopPropagation();
-    const target = e.currentTarget as HTMLElement;
-    target.setPointerCapture(e.pointerId);
+    // Capture is an optimisation, not a requirement: the move and up listeners
+    // are on the window, so the gesture works without it. It throws for a
+    // pointer that is no longer down, and letting that abort the handler would
+    // leave a gesture that never registered its listeners and never ends.
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* already up */ }
     dragRef.current = { id, startX: e.clientX, startY: e.clientY, box: { ...box } };
+    let latest = { ...box };
 
     const move = (ev: PointerEvent) => {
       const d = dragRef.current;
       if (!d) return;
       const z = store.get().z;
-      const next = {
+      const wanted = {
         ...d.box,
-        // Whole page units. Free dragging otherwise leaves frames on
-        // fractional positions, which is where the "why is this half a pixel
-        // out" class of confusion comes from.
-        x: Math.round(d.box.x + (ev.clientX - d.startX) / z),
-        y: Math.round(d.box.y + (ev.clientY - d.startY) / z),
+        x: d.box.x + (ev.clientX - d.startX) / z,
+        y: d.box.y + (ev.clientY - d.startY) / z,
       };
-      layoutRef.current = { ...layoutRef.current, [d.id]: next };
-      const el = document.querySelector<HTMLElement>(`[data-screen-id="${d.id}"]`);
-      if (el) el.style.transform = `translate(${next.x}px, ${next.y}px)`;
+      // Tolerance is in screen pixels, so it must be divided by zoom: eight
+      // pixels of pointer slop is eight pixels whatever the canvas is doing.
+      const snapped = snapMovingBox(
+        wanted, othersOf(d.id), { x: [], y: [] },
+        SNAP_TOLERANCE_PX / z,
+        ev.ctrlKey || ev.metaKey,
+      );
+      latest = { ...wanted, x: snapped.x, y: snapped.y };
+      layoutRef.current = { ...layoutRef.current, [d.id]: latest };
+      paintFrame(d.id, latest);
+      drawSnapLines(snapped.lines);
       applyCamera(store.get(), false);
     };
 
@@ -292,16 +378,49 @@ export function InteractionLab() {
       window.removeEventListener('pointerup', up);
       const d = dragRef.current;
       dragRef.current = null;
-      if (!d) return;
-      // React hears about it once, at the end. Not sixty times a second.
-      setLayout({ ...layoutRef.current });
-      persist();
-      recull();
+      if (d) commitGesture(d.id, latest);
     };
 
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-  }, [applyCamera, persist, recull, store]);
+  }, [applyCamera, commitGesture, drawSnapLines, paintFrame, store]);
+
+  /**
+   * Resizing is the same shape as dragging with one difference: only the
+   * rounding half of snapping applies. Edge-to-edge smart snapping while
+   * resizing fights the anchored edge, so it is deliberately not built rather
+   * than half-built.
+   */
+  const onResizeStart = useCallback((id: string, handle: Handle, e: React.PointerEvent) => {
+    const box = layoutRef.current[id];
+    if (!box || modeRef.current !== 'explore') return;
+    e.stopPropagation();
+    e.preventDefault();
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* already up */ }
+    const start = { ...box };
+    const from = { x: e.clientX, y: e.clientY };
+    let latest = { ...box };
+
+    const move = (ev: PointerEvent) => {
+      const z = store.get().z;
+      latest = snapResizedBox(
+        resizeBox(start, handle, (ev.clientX - from.x) / z, (ev.clientY - from.y) / z),
+      );
+      layoutRef.current = { ...layoutRef.current, [id]: latest };
+      paintFrame(id, latest);
+      showSizeBadge(latest);
+      applyCamera(store.get(), false);
+    };
+
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      commitGesture(id, latest);
+    };
+
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, [applyCamera, commitGesture, paintFrame, showSizeBadge, store]);
 
   // ── Element wiring, all through ref callbacks ─────────────────────────────
 
@@ -478,6 +597,7 @@ export function InteractionLab() {
               onSelect={setSelected}
               onLockIn={lockInto}
               onDragStart={onDragStart}
+              onResizeStart={onResizeStart}
               registerEscape={registerEscape}
             />
           );
@@ -485,6 +605,9 @@ export function InteractionLab() {
       </div>
 
       <div className={styles.chrome} ref={chromeRef}>
+        <div ref={snapLayerRef} />
+        <div className={styles.sizeBadge} ref={badgeRef} style={{ display: 'none' }} />
+
         {SCREENS.map((def) => (
           <div
             key={def.id}
