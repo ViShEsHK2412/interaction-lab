@@ -18,6 +18,9 @@ import {
 import { paintMeasurements } from './core/measurements';
 import { copyName, labFs } from './core/lab-fs';
 import { drainPendingToast, toast, toastAfterReload, Toasts } from './core/lab-toasts';
+import {
+  addSwatch, loadColour, loadSwatches, normaliseHex, saveColour, saveSwatches,
+} from './core/canvas-colour';
 import { ScreenFrame } from './core/screen-frame';
 import {
   distributeRow, resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
@@ -38,8 +41,6 @@ const IDLE_MS = 160;
 const NUDGE_COMMIT_MS = 400;
 /** Space left between frames when they are tidied into a row. */
 const CLEANUP_GAP = 200;
-/** The canvas colour, which the grid and the dim overlays both read. */
-const CANVAS_KEY = 'interaction-lab:canvas:v1';
 
 /**
  * Three modes, and Escape walks back one at a time.
@@ -234,14 +235,25 @@ export function InteractionLab() {
   paintMeasureRef.current = paintMeasureLayer;
 
   const gridRef = useRef<HTMLCanvasElement | null>(null);
-  const [canvasColour, setCanvasColour] = useState<string>(() => {
-    // Validated, because a stored value that is not a colour makes --canvas
-    // resolve to nothing and the canvas goes transparent.
-    try {
-      const stored = localStorage.getItem(CANVAS_KEY);
-      return stored && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(stored) ? stored : '#f1f1f1';
-    } catch { return '#f1f1f1'; }
-  });
+  const [canvasColour, setCanvasColour] = useState<string>(loadColour);
+  const [swatches, setSwatches] = useState<string[]>(loadSwatches);
+  const [colourOpen, setColourOpen] = useState(false);
+  const [hexDraft, setHexDraft] = useState(canvasColour);
+
+  /** Applied live; only Save puts it in the row. */
+  const applyColour = useCallback((next: string) => {
+    const hex = normaliseHex(next);
+    if (!hex) return;
+    setCanvasColour(hex);
+    setHexDraft(hex);
+    saveColour(hex);
+    // Both the grid and the rulers pick their own colour from the background,
+    // so recolouring the canvas has to repaint them.
+    requestAnimationFrame(() => {
+      paintGridRef.current?.();
+      paintRulerRef.current?.();
+    });
+  }, []);
 
   /**
    * The window's size, tracked only while a screen is filling.
@@ -283,6 +295,8 @@ export function InteractionLab() {
     paintPixelGrid(ctx, store.get(), { width: r.width, height: r.height },
       bg ? { light: isLight(bg) } : {});
   }, [store]);
+
+  const colourOpenRef = useRef(false);
 
   const paintGridRef = useRef<(() => void) | null>(null);
   paintGridRef.current = paintGrid;
@@ -1077,6 +1091,11 @@ export function InteractionLab() {
       // Ahead of delete, and delete refuses the modifiers below, because the
       // two shortcuts share a key: Ctrl+Shift+Backspace matched delete first
       // and removed a screen when it was asked to reset the layout.
+      if (e.key === 'Escape' && colourOpenRef.current) {
+        e.preventDefault();
+        setColourOpen(false);
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Backspace') {
         e.preventDefault();
         resetLayout();
@@ -1260,6 +1279,7 @@ export function InteractionLab() {
     () => Math.round(store.get().z * 100),
   );
 
+  colourOpenRef.current = colourOpen;
   const activeName = SCREENS.find((s) => s.id === activeId)?.name ?? '';
   const parsedCanvas = parseColour(canvasColour);
   const canvasTheme = parsedCanvas && !isLight(parsedCanvas) ? 'dark' : 'light';
@@ -1408,21 +1428,65 @@ export function InteractionLab() {
             </>
           )}
           <span className={styles.hudDivider} />
-          <label className={styles.hudSwatch} title="Canvas colour">
-            <span style={{ background: canvasColour }} />
-            <input
-              type="color"
-              value={canvasColour}
-              onChange={(e) => {
-                const next = e.target.value;
-                setCanvasColour(next);
-                try { localStorage.setItem(CANVAS_KEY, next); } catch { /* disabled */ }
-                // The grid's own colour follows the background's luminance, so
-                // recolouring the canvas has to repaint it.
-                requestAnimationFrame(() => { paintGrid(); paintRulerRef.current?.(); });
-              }}
-            />
-          </label>
+          <div className={styles.colour}>
+            <button
+              type="button"
+              className={styles.hudSwatch}
+              title="Canvas colour"
+              onClick={() => { setHexDraft(canvasColour); setColourOpen((v) => !v); }}
+            >
+              <span style={{ background: canvasColour }} />
+            </button>
+
+            {colourOpen && (
+              <div className={styles.colourPopover}>
+                <input
+                  type="color"
+                  className={styles.colourPicker}
+                  value={canvasColour}
+                  onChange={(e) => applyColour(e.target.value)}
+                />
+                <form
+                  className={styles.colourRow}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const hex = normaliseHex(hexDraft);
+                    if (!hex) { toast('That is not a hex colour', 'warn'); return; }
+                    applyColour(hex);
+                    const next = addSwatch(swatches, hex);
+                    setSwatches(next);
+                    saveSwatches(next);
+                  }}
+                >
+                  <input
+                    className={styles.hexField}
+                    value={hexDraft}
+                    spellCheck={false}
+                    aria-label="Canvas colour, as hex"
+                    onChange={(e) => setHexDraft(e.target.value)}
+                  />
+                  <button type="submit" className={styles.hudButton}>Save</button>
+                </form>
+
+                {/* No presets. The row fills with colours you chose, which
+                    after a day of use beats anyone else's defaults. */}
+                {swatches.length > 0 && (
+                  <div className={styles.swatchRow}>
+                    {swatches.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={styles.swatch}
+                        style={{ background: c }}
+                        title={c}
+                        onClick={() => applyColour(c)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className={styles.hudButton}

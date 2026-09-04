@@ -9,3 +9,6 @@ PLAN.md
 AGENTS.md
 CLAUDE.md
 .lab-trash/
+
+# Incremental build cache.
+*.tsbuildinfo

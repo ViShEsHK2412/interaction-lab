@@ -380,3 +380,81 @@
 }
 
 .play:hover { background: #0b86e0; }
+
+/* The colour popover, above the HUD it belongs to. */
+.colour { position: relative; }
+
+.colourPopover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+  width: 196px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #1c1c1c;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.32);
+}
+
+/*
+ * A grid item's min-width is auto, so a track grows to its content's
+ * min-content size no matter what width the container declares. The colour
+ * input and the hex-plus-Save row are both wider than 196px intrinsically, so
+ * the track grew to 243 and the children spilled out of the panel behind them.
+ */
+.colourPopover > * { min-width: 0; }
+
+.colourPicker {
+  width: 100%;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.colourRow { display: flex; gap: 6px; }
+
+.hexField {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 0.16);
+  border-radius: 5px;
+  background: rgb(255 255 255 / 0.06);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hexField:focus { outline: 1px solid #0d99ff; outline-offset: -1px; }
+
+/* One row, which is what the ten-swatch cap is for. */
+.swatchRow { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2);
+}
+
+/* Now a button rather than a label wrapping an input. */
+.hudSwatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
