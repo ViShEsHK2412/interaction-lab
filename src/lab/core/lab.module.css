@@ -128,7 +128,10 @@
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-  color: #5a5a5a;
+  /* Chosen against the canvas colour, which is a control the user can reach.
+     A fixed grey measured 6.1:1 on the default background and 1.75:1 on a mid
+     grey, and 11px text needs 4.5:1 wherever it lands. */
+  color: var(--label, #5a5a5a);
   pointer-events: auto;
   cursor: default;
 }

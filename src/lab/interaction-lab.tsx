@@ -7,7 +7,7 @@ import {
 import { bindCanvasInput, transformFor } from './core/use-canvas-input';
 import { clearLayout, createSaver, loadLayout, type StoredLayout } from './core/persistence';
 import { affectedIds, applyCommand, createHistory, isNoop, type Command } from './core/history';
-import { isLight, paintPixelGrid, parseColour } from './core/pixel-grid';
+import { isLight, paintPixelGrid, parseColour, pickReadable } from './core/pixel-grid';
 import {
   beginRulerPass, DARK_RULER, LIGHT_RULER, paintGuideLabels, paintGuides, paintRulers,
   type Band,
@@ -920,8 +920,14 @@ export function InteractionLab() {
     if (!el) return undefined;
 
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      // composedPath()[0] rather than target: an event from inside an open
+      // shadow root is retargeted to the host, so a plain target check cannot
+      // see an input a screen rendered in a shadow tree, and the lab would
+      // steal the keystroke.
+      const t = (e.composedPath?.()[0] ?? e.target) as HTMLElement | null;
+      if (t && typeof t === 'object' && 'tagName' in t
+          && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'
+              || t.isContentEditable)) return;
 
       // Locked in, the screen owns the keyboard. The lab listens for two keys
       // and nothing else, and Escape goes to the screen first.
@@ -1157,13 +1163,33 @@ export function InteractionLab() {
   );
 
   const activeName = SCREENS.find((s) => s.id === activeId)?.name ?? '';
+  const parsedCanvas = parseColour(canvasColour);
+  const canvasTheme = parsedCanvas && !isLight(parsedCanvas) ? 'dark' : 'light';
+  /*
+   * Measured against the canvas rather than flipped by its luminance. A binary
+   * flip cannot solve a mid grey, which is hostile to both a dark grey and a
+   * light one: at #808080 the label sat at 1.75:1 either way. Preference order
+   * keeps the muted grey wherever it clears 4.5:1 and only reaches for an
+   * extreme where nothing else will do.
+   */
+  const labelColour = pickReadable(canvasColour, ['#5a5a5a', '#b4b4b4', '#000000', '#ffffff']);
 
   return (
     <div
       className={styles.root}
       ref={rootCallback}
       data-mode={mode}
-      style={{ ['--canvas' as string]: canvasColour }}
+      /*
+       * Chrome that sits directly on the canvas flips with the canvas's own
+       * luminance. Measured, not assumed: a fixed grey label reads 6.1:1 on
+       * the default background and 1.75:1 on a mid grey, and the canvas colour
+       * is a control the user can reach.
+       */
+      data-canvas-theme={canvasTheme}
+      style={{
+        ['--canvas' as string]: canvasColour,
+        ['--label' as string]: labelColour,
+      }}
     >
       <canvas className={styles.grid} ref={gridRef} aria-hidden="true" />
       <canvas className={styles.measure} ref={measureRef} aria-hidden="true" />

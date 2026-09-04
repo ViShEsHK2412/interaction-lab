@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  firstLine, gridAlpha, isLight, MIN_PERIOD_PX, parseColour, PIXEL_GRID_STEP,
+  contrastRatio, firstLine, gridAlpha, isLight, MIN_PERIOD_PX, parseColour,
+  pickReadable, PIXEL_GRID_STEP,
 } from './pixel-grid';
 
 describe('gridAlpha', () => {
@@ -70,5 +71,51 @@ describe('parseColour', () => {
   it('gives nothing rather than a guess for anything else', () => {
     expect(parseColour('rebeccapurple')).toBeNull();
     expect(parseColour('')).toBeNull();
+  });
+});
+
+describe('contrastRatio', () => {
+  it('gives 21 for black on white and 1 for a colour on itself', () => {
+    expect(contrastRatio({ r: 0, g: 0, b: 0 }, { r: 255, g: 255, b: 255 })).toBeCloseTo(21, 2);
+    expect(contrastRatio({ r: 128, g: 128, b: 128 }, { r: 128, g: 128, b: 128 })).toBeCloseTo(1, 9);
+  });
+
+  it('does not care which way round the pair is given', () => {
+    const a = { r: 13, g: 153, b: 255 };
+    const b = { r: 241, g: 241, b: 241 };
+    expect(contrastRatio(a, b)).toBeCloseTo(contrastRatio(b, a), 9);
+  });
+});
+
+describe('pickReadable', () => {
+  // Muted first, the extremes last, which is the order preference runs in.
+  const CHROME = ['#5a5a5a', '#b4b4b4', '#000000', '#ffffff'];
+
+  it('clears 4.5:1 against every background, including the hostile mid tones', () => {
+    // #808080 is the case a binary light-or-dark flip cannot solve: it is
+    // hostile to both a dark grey and a light grey, and only an extreme wins.
+    for (const bg of ['#ffffff', '#f1f1f1', '#c0c0c0', '#808080', '#606060', '#2b2b2b', '#000000']) {
+      const picked = pickReadable(bg, CHROME);
+      const ratio = contrastRatio(parseColour(picked)!, parseColour(bg)!);
+      expect(ratio).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('keeps the muted grey wherever it is good enough', () => {
+    expect(pickReadable('#f1f1f1', CHROME)).toBe('#5a5a5a');
+    expect(pickReadable('#000000', CHROME)).toBe('#b4b4b4');
+  });
+
+  it('reaches for an extreme only where it has to', () => {
+    expect(pickReadable('#808080', CHROME)).toBe('#000000');
+  });
+
+  it('falls back to the closest it has rather than to nothing', () => {
+    // Nothing in this list clears the floor against mid grey.
+    expect(pickReadable('#808080', ['#8a8a8a', '#767676'])).toBe('#767676');
+  });
+
+  it('falls back to the first candidate when the background will not parse', () => {
+    expect(pickReadable('not-a-colour', CHROME)).toBe('#5a5a5a');
   });
 });

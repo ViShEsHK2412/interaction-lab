@@ -163,8 +163,9 @@ export function bindCanvasInput(root: HTMLElement, opts: CanvasInputOptions): ()
   // ── Space as a temporary hand tool ────────────────────────────────────────
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.code !== 'Space' || e.repeat || locked()) return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    const t = (e.composedPath?.()[0] ?? e.target) as HTMLElement | null;
+    if (t && typeof t === 'object' && 'tagName' in t
+        && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     e.preventDefault();                              // space would scroll otherwise
     spaceHeld = true;
     root.dataset['hand'] = '';

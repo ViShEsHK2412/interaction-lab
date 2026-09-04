@@ -124,3 +124,61 @@ export function paintPixelGrid(
   }
   ctx.stroke();
 }
+
+/**
+ * WCAG relative luminance, and the contrast between two colours.
+ *
+ * Separate from `isLight`, which answers a cruder question. The difference
+ * matters at the mid tones: a background at #808080 is hostile to both a dark
+ * grey and a light grey, so a binary light-or-dark flip picks a side and still
+ * lands at 1.75:1. Measuring both candidates and taking the better one is the
+ * only thing that works across the whole range.
+ */
+export function relativeLuminance(rgb: { r: number; g: number; b: number }): number {
+  const channel = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b);
+}
+
+export function contrastRatio(
+  a: { r: number; g: number; b: number },
+  b: { r: number; g: number; b: number },
+): number {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((p, q) => q - p);
+  return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+}
+
+/**
+ * The most muted candidate that still reads against this background.
+ *
+ * Preference order, not best ratio. Taking the highest contrast would always
+ * return black or white, which defeats the point of having muted chrome at
+ * all; taking the first that clears the floor keeps the subtle colour wherever
+ * it is good enough and only reaches for the extreme where it has to.
+ *
+ * Put pure black and white last in the list. One of them always clears 4.58:1
+ * against any background -- the worst case is the luminance where they are
+ * equally bad -- so a list ending in both can never fail to find something.
+ */
+export function pickReadable(
+  background: string,
+  candidates: readonly string[],
+  minimum = 4.5,
+): string {
+  const bg = parseColour(background);
+  const first = candidates[0] ?? '#000000';
+  if (!bg) return first;
+
+  let best = first;
+  let bestRatio = -1;
+  for (const candidate of candidates) {
+    const fg = parseColour(candidate);
+    if (!fg) continue;
+    const ratio = contrastRatio(fg, bg);
+    if (ratio >= minimum) return candidate;
+    if (ratio > bestRatio) { bestRatio = ratio; best = candidate; }
+  }
+  return best;
+}
