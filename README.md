@@ -27,7 +27,10 @@ arithmetic and you want to own them.
 - Snapping: edges and centres onto other frames, with red alignment lines, plus
   whole-pixel rounding on any axis the geometry did not claim. `Ctrl`/`Cmd`
   held mid-drag bypasses it
-- Camera and layout saved to `localStorage`, with a reset in the HUD
+- `Ctrl/Cmd + Z` undo, `Shift` to redo, one entry per completed gesture. A run
+  of arrow nudges collapses into a single step
+- Camera and layout saved to `localStorage`, with a reset in the HUD. Undo
+  lives in `sessionStorage`, so it survives a reload and dies with the tab
 - Frames cull offscreen without unmounting, so screen state survives
 
 ## The screen contract
