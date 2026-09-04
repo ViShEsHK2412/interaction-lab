@@ -22,6 +22,15 @@ export interface CanvasInputOptions {
   /** Told when a gesture starts and ends, for the will-change dance and culling. */
   onGestureStart: () => void;
   onGestureEnd: () => void;
+  /**
+   * Called before any input writes the camera.
+   *
+   * Its job is to cancel a camera animation in flight. An animation that keeps
+   * writing the camera while you are already turning the wheel wins the
+   * argument and the gesture is simply ignored, which is the one thing motion
+   * must never do: a running animation has to be interruptible at any instant.
+   */
+  onInput: () => void;
 }
 
 /** Pointer position relative to the canvas, which is what the camera maths wants. */
@@ -30,7 +39,7 @@ function local(e: { clientX: number; clientY: number }, rect: DOMRect) {
 }
 
 export function bindCanvasInput(root: HTMLElement, opts: CanvasInputOptions): () => void {
-  const { camera, rect, locked, onGestureStart, onGestureEnd } = opts;
+  const { camera, rect, locked, onGestureStart, onGestureEnd, onInput } = opts;
 
   /**
    * Trackpad pinch arrives as a wheel event with ctrlKey set. That is also how
@@ -41,6 +50,7 @@ export function bindCanvasInput(root: HTMLElement, opts: CanvasInputOptions): ()
   const onWheel = (e: WheelEvent) => {
     if (locked()) return;
     e.preventDefault();
+    onInput();
     const p = local(e, rect());
     const c = camera.get();
 
@@ -63,6 +73,7 @@ export function bindCanvasInput(root: HTMLElement, opts: CanvasInputOptions): ()
   let spaceHeld = false;
 
   const startPan = (e: PointerEvent) => {
+    onInput();
     panning = e.pointerId;
     last = { x: e.clientX, y: e.clientY };
     root.setPointerCapture(e.pointerId);
@@ -108,6 +119,7 @@ export function bindCanvasInput(root: HTMLElement, opts: CanvasInputOptions): ()
     if (e.pointerType !== 'touch' || locked()) return;
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (touches.size === 2) {
+      onInput();
       endPan();
       const [a, b] = [...touches.values()] as [{ x: number; y: number }, { x: number; y: number }];
       pinch = { distance: Math.hypot(a.x - b.x, a.y - b.y), z: camera.get().z };

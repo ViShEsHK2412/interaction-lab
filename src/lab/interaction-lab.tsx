@@ -826,6 +826,9 @@ export function InteractionLab() {
       rect: () => rectRef.current,
       viewport,
       locked: () => modeRef.current !== 'explore',
+      // Any input cancels a camera animation, so a wheel mid-flight takes
+      // over instead of being overwritten by the next animation frame.
+      onInput: () => cancelAnimationFrame(animRef.current),
       onGestureStart: () => {
         gesturingRef.current = true;
         el.dataset['gesturing'] = '';
