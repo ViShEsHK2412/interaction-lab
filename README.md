@@ -89,9 +89,8 @@ export default manifest;
 
 That is what lets duplicate and delete be real. `Cmd/Ctrl D` asks the dev
 server to copy the folder and patches the copy's manifest; `Delete` moves it to
-`.lab-trash`; `Ctrl/Cmd Z` moves it back. `Alt` + double-click on a label
-renames it, writing the manifest. A plain double-click on a label locks into
-that screen, which is what a double-click does everywhere else on the canvas. Everything is persisted before the request,
+`.lab-trash`; `Ctrl/Cmd Z` moves it back. Double-clicking a label
+renames it, writing the manifest. Everything is persisted before the request,
 so the reload each one triggers can land whenever it likes.
 
 The plugin is `apply: 'serve'`, so none of it exists in a production build. The
