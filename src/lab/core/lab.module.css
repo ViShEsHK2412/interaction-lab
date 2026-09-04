@@ -1,0 +1,191 @@
+/*
+ * Lab chrome. Neutral by design: the lab is a tool, and the projects that live
+ * inside it bring their own look. Nothing in here uses a project token, and no
+ * screen style reaches out here.
+ */
+
+.root {
+  position: fixed;
+  inset: 0;
+  overflow: clip;
+  /* The canvas owns every gesture. Without this a touch drag scrolls the page
+     instead of panning, and a pinch zooms the browser instead of the canvas. */
+  touch-action: none;
+  background: var(--canvas, #f1f1f1);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #1c1c1c;
+  user-select: none;
+  cursor: default;
+}
+
+.root[data-hand] { cursor: grab; }
+.root[data-hand][data-panning] { cursor: grabbing; }
+.root[data-panning] { cursor: grabbing; }
+
+/*
+ * While the camera is moving, stop hit-testing live screen content. Hover work
+ * over a dozen mounted screens is real cost on every pointer event, and none
+ * of it can matter mid-gesture. Scoped to these two rules rather than set on
+ * the body, since a body-wide toggle costs a whole-document recalc by itself.
+ */
+.root[data-gesturing] .layer,
+.root[data-gesturing] .chrome { pointer-events: none; }
+
+/* The one transformed element. Everything on the canvas is inside it. */
+.layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  /* No will-change at rest. A permanently promoted layer re-uses its stale
+     raster, and text goes visibly blurry the moment you zoom. It is added on
+     gesture start and dropped again when the camera settles. */
+}
+
+.group {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/*
+ * Culled. content-visibility rather than display:none, because the browser
+ * keeps the subtree's rendering state and re-showing skips a full re-layout.
+ * pointer-events too: the empty box would otherwise still hit-test and block
+ * panning over the space where a screen used to be.
+ */
+.group[data-culled] {
+  content-visibility: hidden;
+  pointer-events: none;
+}
+
+.frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: #fff;
+  overflow: clip;
+  /* Fixed size makes size containment safe, and it means nothing a screen does
+     to its own layout can ever invalidate the canvas around it. */
+  contain: strict;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.10);
+}
+
+.scroll {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+/* Inert until locked into. */
+.group:not([data-active]) .scroll { pointer-events: none; }
+
+.shield {
+  position: absolute;
+  inset: 0;
+  cursor: default;
+}
+
+.dim {
+  position: absolute;
+  inset: 0;
+  background: var(--canvas, #f1f1f1);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/*
+ * The selection ring is drawn at a constant thickness on screen, whatever the
+ * zoom, by dividing through --inv-zoom. A 2px ring that scales with the canvas
+ * is invisible zoomed out and a slab zoomed in.
+ */
+.group[data-selected] .frame,
+.group[data-active] .frame {
+  outline: calc(2px * var(--inv-zoom, 1)) solid #0d99ff;
+  outline-offset: calc(2px * var(--inv-zoom, 1));
+}
+
+/*
+ * Chrome sits outside the transformed layer and is placed imperatively.
+ * Anything inside the layer is part of the GPU raster and visibly stretches
+ * during a zoom gesture before it re-rasterises; a label doing that reads as
+ * broken. Screen-space chrome never stretches because it is never scaled.
+ */
+.chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.label {
+  position: absolute;
+  transform-origin: 0 100%;
+  padding: 0 2px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  color: #5a5a5a;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.label[data-selected] { color: #0d99ff; }
+
+/* The HUD. Bottom centre, out of the way of everything. */
+.hud {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #1c1c1c;
+  color: #fff;
+  font-size: 12px;
+  pointer-events: auto;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.24);
+}
+
+.hudButton {
+  appearance: none;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+
+.hudButton:hover { background: rgb(255 255 255 / 0.12); }
+.hudButton:active { background: rgb(255 255 255 / 0.2); }
+
+.hudDivider {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px;
+  background: rgb(255 255 255 / 0.16);
+}
+
+.hudBadge {
+  padding: 5px 9px;
+  color: rgb(255 255 255 / 0.72);
+  white-space: nowrap;
+}
+
+.hudBadge b {
+  color: #fff;
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud { transition: none; }
+}

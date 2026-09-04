@@ -13,9 +13,40 @@ No dependencies beyond React. The camera, the input routing and the persistence
 are all hand-rolled, which is the point: a canvas is about a hundred lines of
 arithmetic and you want to own them.
 
-## Status
+## What works
 
-Early. See the commit history for what actually works today.
+- An infinite canvas as the app shell, with two demo screens on it
+- Pan by wheel, by dragging empty canvas, by space-drag or middle-drag
+- Zoom to the cursor by `Ctrl`/`Cmd`+wheel or trackpad pinch, anchored so the
+  point under the pointer never moves
+- Click to select, drag to move, double-click to lock in and use the screen for
+  real, `Esc` to come back out
+- `Shift 1` fit all, `Shift 2` fit selected, `Shift 0` 100%, `+`/`-` zoom steps,
+  `Tab` to cycle, arrows to nudge (`Shift` for 10)
+- Camera and layout saved to `localStorage`, with a reset in the HUD
+- Frames cull offscreen without unmounting, so screen state survives
+
+## The screen contract
+
+A screen renders inside a frame that an ancestor is translating and scaling,
+which makes every normal instinct about coordinates wrong. `useScreen()` is how
+a screen gets the answers it actually needs:
+
+```tsx
+const { active, visible, frameSize, clientToFrame, setEscapeInterceptor } = useScreen();
+```
+
+- Pointer positions come from `clientToFrame`, never from `clientX` directly
+- Sizes come from `frameSize`, never from `window.innerWidth`
+- Anything expensive stops when `visible` is false
+- Global shortcuts gate on `active`
+- `setEscapeInterceptor` claims `Esc` when the screen has something to close
+
+## Still to build
+
+Frame resize handles, snapping and alignment guides, undo, rulers and guides,
+Alt-hover distance measurement, and the dev-server file operations that make
+duplicate and delete real.
 
 ## Development
 

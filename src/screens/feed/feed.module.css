@@ -1,0 +1,91 @@
+/* A screen styles itself however it likes. The lab never reaches in here, and
+   nothing in here reaches out to lab chrome. */
+.screen {
+  min-height: 100%;
+  padding: 32px 40px 64px;
+  background: #fbfbfd;
+  color: #16161a;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e6e6ec;
+}
+
+.header h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
+
+.meta { font-size: 12px; color: #86868f; font-variant-numeric: tabular-nums; }
+
+.list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+
+.post {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid #e6e6ec;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.body {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.body b { font-size: 13px; font-weight: 600; }
+.body span { font-size: 14px; color: #55555f; line-height: 1.5; }
+
+.like {
+  flex: none;
+  padding: 6px 12px;
+  border: 1px solid #e6e6ec;
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: #86868f;
+  cursor: pointer;
+}
+
+.like[data-on] { border-color: #ff3b6b; color: #ff3b6b; }
+
+.sheet {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 20px 24px;
+  border-radius: 12px;
+  background: #16161a;
+  color: #fff;
+}
+
+.sheet p { margin: 0; font-size: 15px; line-height: 1.5; }
+
+.sheet button {
+  justify-self: start;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hint { font-size: 12px; color: rgb(255 255 255 / 0.6); }

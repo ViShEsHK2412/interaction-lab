@@ -1,0 +1,20 @@
+/*
+ * Document-level only. The lab styles itself in its own module; screens style
+ * themselves however they like. Nothing here is a design decision either of
+ * them should have to work around.
+ */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  /* The window never scrolls: the lab root is fixed inset-0 and the canvas
+     does its own panning. A scrollbar here would be a bug you could drag. */
+  overflow: hidden;
+  height: 100%;
+}
+
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
