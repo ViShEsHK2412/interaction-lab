@@ -117,21 +117,33 @@ function ScreenFrameInner(props: FrameProps) {
         height: size.height,
       }}
     >
-      {/*
-        * `inert` while the screen is not locked into, which is the keyboard
-        * half of the shield.
-        *
-        * The shield already stops the pointer reaching an unfocused screen, and
-        * `tabIndex={-1}` took the scroll container out of the tab order, but
-        * neither touches the content inside it. So Tab walked through every
-        * link, button and field of every mounted screen before it reached the
-        * lab's own controls: three demo screens put roughly four hundred stops
-        * in front of the HUD. `inert` removes the whole subtree from the tab
-        * order and from the accessibility tree in one attribute, and drops away
-        * the moment the screen is locked into and genuinely usable.
-        */}
-      <div className={styles.frame} inert={!active}>
-        <div className={styles.scroll} ref={scrollCallback} tabIndex={active ? 0 : -1}>
+      <div className={styles.frame}>
+        {/*
+          * `inert` while the screen is not locked into, which is the keyboard
+          * half of the shield.
+          *
+          * The shield already stops the pointer reaching an unfocused screen,
+          * and `tabIndex={-1}` took the scroll container out of the tab order,
+          * but neither touches the content inside it. So Tab walked through
+          * every link, button and field of every mounted screen before it
+          * reached the lab's own controls: three demo screens put roughly four
+          * hundred stops in front of the HUD. `inert` removes the whole subtree
+          * from the tab order and the accessibility tree in one attribute.
+          *
+          * On the scroll container and NOT on the frame, which is the mistake
+          * worth leaving a note about. `inert` disables pointer events across
+          * its whole subtree, and the shield is a child of the frame, so
+          * putting it one level up silently killed the shield's own handlers:
+          * clicking a frame no longer selected it, dragging did nothing, and
+          * double-click could not lock in. The screen content is what has to
+          * go inert. The shield is the thing standing in front of it.
+          */}
+        <div
+          className={styles.scroll}
+          ref={scrollCallback}
+          tabIndex={active ? 0 : -1}
+          inert={!active}
+        >
           <ScreenProvider value={env}>{content}</ScreenProvider>
         </div>
 
@@ -155,7 +167,7 @@ function ScreenFrameInner(props: FrameProps) {
           />
         )}
 
-        {dimmed && <div className={styles.dim} />}
+        {dimmed && <div className={styles.dim} data-dim="" />}
       </div>
 
       {/*

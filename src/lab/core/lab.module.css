@@ -92,12 +92,19 @@
   cursor: default;
 }
 
+/*
+ * Every screen but the focused one, while locked in. A canvas-coloured div
+ * rather than a filter, which would force a layer per frame.
+ *
+ * It takes pointer events, because pressing a dimmed neighbour is one of the
+ * documented ways out of lock-in. Explore mode never renders it, so the shield
+ * underneath keeps every gesture it had.
+ */
 .dim {
   position: absolute;
   inset: 0;
   background: var(--canvas, #f1f1f1);
   opacity: 0.6;
-  pointer-events: none;
 }
 
 /*
@@ -275,7 +282,21 @@
  * any zoom. A handle that scales with the canvas is untouchable zoomed out and
  * a slab zoomed in.
  */
-.handles { position: absolute; inset: 0; }
+/*
+ * The container spans the whole frame so its children can be placed against
+ * every edge, which means it also sits on top of the whole frame. Without
+ * `pointer-events: none` it swallowed every click the moment a screen was
+ * selected, and selecting is the first half of the double-click that locks in
+ * — so double-clicking into a screen could not work at all. The handles
+ * themselves take their events back one rule down.
+ */
+.handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.edge, .corner { pointer-events: auto; }
 
 .edge {
   position: absolute;
@@ -345,10 +366,16 @@
   pointer-events: none;
 }
 
+/* A filled screen covers the whole viewport, so the grid behind it is painting
+   for nobody. Hidden rather than unmounted, so leaving fill costs no setup. */
+.root[data-mode='fill'] .grid { display: none; }
+
 /*
- * The rulers sit above the frames, and only take pointer events when they are
- * showing. A full-viewport canvas that swallowed clicks while hidden would
- * make the whole canvas unusable.
+ * The rulers sit above the frames and never take a pointer event, showing or
+ * not. The canvas is the size of the whole viewport, so any hit-testing it did
+ * would cover every screen on the canvas; the gutters and the guides are
+ * hit-tested in the shell instead, against coordinates, which is the only way
+ * to claim part of a canvas and decline the rest.
  */
 .rulers {
   position: absolute;
@@ -356,8 +383,6 @@
   left: 0;
   pointer-events: none;
 }
-
-.rulers[data-on] { pointer-events: auto; }
 
 /* Measurements sit above the frames and below the rulers, and never take a
    pointer event: they are a readout, not a control. */

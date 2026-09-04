@@ -12,3 +12,6 @@ CLAUDE.md
 
 # Incremental build cache.
 *.tsbuildinfo
+
+# The source prompt, kept locally.
+INTERACTION_LAB.md

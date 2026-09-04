@@ -40,6 +40,25 @@ const IDLE_MS = 160;
  * entries turns Ctrl+Z into a key you hammer without being able to tell how
  * many times.
  */
+/*
+ * Snapping and nudging, tunable in one place, which is where the spec asks for
+ * them. `SHOW_PIXEL_GRID` is deliberately not here: the grid has a HUD toggle,
+ * and a build-time flag for something with a button would be a second answer to
+ * a settled question.
+ */
+
+/** Off makes every drag free. Geometry snapping and pixel rounding both go. */
+const SNAP_TO_GRID = true;
+
+/** Figma's nudge amounts. Shift takes the big one. */
+const NUDGE_SMALL = 1;
+const NUDGE_BIG = 10;
+
+/**
+ * How long a run of arrow presses stays one undo entry. Long enough that
+ * holding a key is a single step, short enough that a deliberate second nudge
+ * is its own.
+ */
 const NUDGE_COMMIT_MS = 400;
 /** Space left between frames when they are tidied into a row. */
 const CLEANUP_GAP = 200;
@@ -306,6 +325,14 @@ export function InteractionLab() {
   }, [store]);
 
   const colourOpenRef = useRef(false);
+
+  /**
+   * The last known pointer position, in canvas coordinates.
+   *
+   * Starts at the viewport centre so a shortcut pressed before the pointer has
+   * ever moved still anchors somewhere sensible rather than at 0, 0.
+   */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
 
   const paintGridRef = useRef<(() => void) | null>(null);
   paintGridRef.current = paintGrid;
@@ -827,7 +854,7 @@ export function InteractionLab() {
           x: guidesRef.current.filter((g) => g.axis === 'x').map((g) => g.at),
           y: guidesRef.current.filter((g) => g.axis === 'y').map((g) => g.at),
         },
-        SNAP_TOLERANCE_PX / z,
+        SNAP_TO_GRID ? SNAP_TOLERANCE_PX / z : 0,
         ev.ctrlKey || ev.metaKey,
       );
       latest = { ...wanted, x: snapped.x, y: snapped.y };
@@ -964,6 +991,13 @@ export function InteractionLab() {
      * renders.
      */
     const onHover = (ev: PointerEvent) => {
+      // Where the pointer is, in canvas coordinates. Shift 0 zooms to 100%
+      // *at the cursor*, which needs a position the keyboard event cannot
+      // carry. Piggybacked on the listener that already runs rather than
+      // adding a second one at pointer frequency.
+      const r = rectRef.current;
+      pointerRef.current = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+
       // Buttons down means a drag is in progress. Measurements must not fight
       // a gesture, and Alt is shared with the duplicate-drag.
       if (ev.buttons !== 0) {
@@ -1089,6 +1123,44 @@ export function InteractionLab() {
         return { x: r.width / 2, y: r.height / 2 };
       };
 
+      /*
+       * The ruler gets first refusal on Delete, Escape and the arrows while a
+       * guide is selected, the way Figma layers guide keys over object keys.
+       *
+       * This has to sit ahead of the file operations, and it did not: the
+       * block was written with exactly this comment and then placed *below*
+       * the delete handler, so pressing Delete with a guide selected matched
+       * the screen branch first and moved a whole screen folder to the trash.
+       * First refusal is an ordering claim, and ordering is the only thing
+       * that can honour it.
+       */
+      if (showRulersRef.current && activeGuideRef.current !== null) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          guidesRef.current = guidesRef.current.filter((g) => g.id !== activeGuideRef.current);
+          activeGuideRef.current = null;
+          commitGuides();
+          return;
+        }
+        if (e.key.startsWith('Arrow')) {
+          const guide = guidesRef.current.find((g) => g.id === activeGuideRef.current);
+          const wants = e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? 'x' : 'y';
+          if (guide && guide.axis === wants) {
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 1;
+            const delta = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -step : step;
+            guidesRef.current = guidesRef.current.map((g) =>
+              (g.id === guide.id ? { ...g, at: g.at + delta } : g));
+            commitGuides();
+            return;
+          }
+        }
+        if (e.key === 'Escape') {
+          activeGuideRef.current = null;
+          paintRulerRef.current?.();
+          return;
+        }
+      }
       // Duplicate, delete and undo-delete are file operations, so they end in
       // a reload: the registry is discovered from the folders on disk, and the
       // only honest way to show the new one is to read them again. Everything
@@ -1171,41 +1243,11 @@ export function InteractionLab() {
         toast('Tidied into a row');
         return;
       }
-      if (e.shiftKey && e.code === 'KeyR') {
+      if (e.shiftKey && e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         setShowRulers((v) => { showRulersRef.current = !v; return !v; });
         requestAnimationFrame(() => paintRulerRef.current?.());
         return;
-      }
-      // The ruler gets first refusal on Delete and the arrows while a guide is
-      // selected, the way Figma layers guide keys over object keys. Without
-      // this the lab would delete the selected SCREEN when you meant the guide.
-      if (showRulersRef.current && activeGuideRef.current !== null) {
-        if (e.key === 'Delete' || e.key === 'Backspace') {
-          e.preventDefault();
-          guidesRef.current = guidesRef.current.filter((g) => g.id !== activeGuideRef.current);
-          activeGuideRef.current = null;
-          commitGuides();
-          return;
-        }
-        if (e.key.startsWith('Arrow')) {
-          const guide = guidesRef.current.find((g) => g.id === activeGuideRef.current);
-          const wants = e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? 'x' : 'y';
-          if (guide && guide.axis === wants) {
-            e.preventDefault();
-            const step = e.shiftKey ? 10 : 1;
-            const delta = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -step : step;
-            guidesRef.current = guidesRef.current.map((g) =>
-              (g.id === guide.id ? { ...g, at: g.at + delta } : g));
-            commitGuides();
-            return;
-          }
-        }
-        if (e.key === 'Escape') {
-          activeGuideRef.current = null;
-          paintRulerRef.current?.();
-          return;
-        }
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -1237,7 +1279,10 @@ export function InteractionLab() {
         if (box) fitTo([box]);
       } else if (e.shiftKey && e.code === 'Digit0') {
         e.preventDefault();
-        const p = centre();
+        // At the cursor, unlike the +/- steps, which are centred. The
+        // difference is deliberate in the spec: 100% is a thing you want
+        // *here*, next to whatever you were looking at.
+        const p = pointerRef.current ?? centre();
         animateTo(zoomAbout(store.get(), p.x, p.y, 1));
       } else if (e.shiftKey && e.code === 'KeyF') {
         e.preventDefault();
@@ -1261,7 +1306,7 @@ export function InteractionLab() {
         if (next) select(next);
       } else if (e.key.startsWith('Arrow') && selectedRef.current) {
         e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;             // Figma's amounts
+        const step = e.shiftKey ? NUDGE_BIG : NUDGE_SMALL;
         const id = selectedRef.current;
         const box = layoutRef.current[id];
         if (!box) return;
@@ -1316,6 +1361,48 @@ export function InteractionLab() {
     <div
       className={styles.root}
       ref={rootCallback}
+      /*
+       * Pressing the empty canvas leaves focus mode.
+       *
+       * This lived on the transformed layer and did the opposite of what it
+       * says. The layer has no size of its own, so it is never the direct
+       * target of a press and a click on the background never reached it;
+       * what did reach it was every press inside a focused screen, bubbling
+       * up, which threw you out of the mode on the first thing you clicked.
+       * So focus mode could not be used and could not be left, from one
+       * missing target check.
+       *
+       * The test is the one the panning code already uses: the root itself, or
+       * something explicitly marked as canvas background. Chrome and frames are
+       * neither, so the HUD and the screen both keep their presses.
+       */
+      /*
+       * The rules and guides get the press before anything under them, and
+       * give it straight back unless it landed in a gutter or on a guide.
+       *
+       * This used to live on the ruler canvas itself, with `pointer-events:
+       * auto` while the rules were showing. That canvas is the size of the
+       * whole viewport, so turning the rules on made every screen unclickable:
+       * no selecting, no dragging, no double-clicking in. The handler declined
+       * the press correctly and it made no difference, because the element had
+       * already swallowed it.
+       *
+       * Capture phase rather than bubble, because a guide drawn over a frame
+       * has to win against that frame's shield, and bubble would reach the
+       * shield first.
+       */
+      onPointerDownCapture={onRulerPointerDown}
+      onPointerDown={(e) => {
+        if (modeRef.current !== 'focus') return;
+        const t = e.target as HTMLElement;
+        const onBackground = t === e.currentTarget
+          || t.dataset['canvasBackground'] !== undefined
+          // The dim overlay over every other screen. It belongs to that
+          // screen's group, so it is neither the root nor the layer, and
+          // without naming it a press on a dimmed neighbour did nothing.
+          || t.dataset['dim'] !== undefined;
+        if (onBackground) exitLock();
+      }}
       /* The tokens hang off this, not off :root, so a screen mounted inside the
          canvas never inherits chrome tokens by accident. */
       data-lab-root=""
@@ -1340,7 +1427,6 @@ export function InteractionLab() {
         className={styles.layer}
         ref={layerCallback}
         data-canvas-background=""
-        onPointerDown={() => { if (mode === 'focus') exitLock(); }}
       >
         <div className={styles.ghost} ref={ghostRef} style={{ display: 'none' }} />
 
@@ -1379,7 +1465,6 @@ export function InteractionLab() {
         ref={rulerRef}
         aria-hidden="true"
         data-on={showRulers && mode !== 'fill' || undefined}
-        onPointerDown={onRulerPointerDown}
       />
 
       <div className={styles.chrome} ref={chromeRef}>
@@ -1403,18 +1488,9 @@ export function InteractionLab() {
               // no free edge to catch.
               onDragStart(def.id, e);
             }}
-            onDoubleClick={(e) => {
-              /*
-               * Alt renames; a plain double-click locks in, which is what a
-               * double-click does everywhere else on this canvas.
-               *
-               * Without the modifier the label was the one place where the
-               * gesture for "open this screen" instead threw up a rename
-               * prompt, which is both a surprise and a blocking native dialog.
-               * The README has documented the Alt version since the feature
-               * landed; the handler had simply never checked for it.
-               */
-              if (!e.altKey) { lockInto(def.id); return; }
+            onDoubleClick={() => {
+              // Renames, per the spec's key map. The lock-in gesture is a
+              // double-click on the frame itself, which is a different target.
               const next = window.prompt('Rename this screen', def.name);
               if (!next || next === def.name) return;
               void labFs.rename(def.dir, next).then((ok) => {
