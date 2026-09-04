@@ -32,16 +32,23 @@ arithmetic and you want to own them.
 - Rulers and guides (`Shift R`) in page units, so they stay glued to the
   content at every zoom. Frames snap to guides as readily as to each other
 - A pixel grid that fades out rather than turning into a wash
+- The canvas colour is yours: a picker, a hex field that takes any of the four
+  spellings people paste, and a swatch row of the ones you saved
 - Hold `Alt` with one frame selected and hover another for the distances
   between them, Figma-style
 - `Ctrl/Cmd + Z` undo, `Shift` to redo, one entry per completed gesture. A run
   of arrow nudges collapses into a single step
 - `Ctrl C` tidies every frame into an evenly spaced row
 - `Cmd/Ctrl D` duplicates a screen and `Delete` removes it, both as **real file
-  operations**, with `Ctrl/Cmd Z` restoring a deleted one from `.lab-trash`
+  operations**, with `Ctrl/Cmd Z` restoring a deleted one from `.lab-trash`.
+  `Alt`-dragging a frame duplicates it where you drop it, with a ghost showing
+  where that is
+- Every file operation says what happened, including when it failed, because a
+  silent failure is indistinguishable from a broken feature
 - Camera and layout saved to `localStorage`, with a reset in the HUD. Undo
   lives in `sessionStorage`, so it survives a reload and dies with the tab
 - Frames cull offscreen without unmounting, so screen state survives
+- `Ctrl/Cmd Shift Backspace` puts the layout back where it started
 
 ## Screens are folders
 
@@ -109,9 +116,8 @@ rather than remember:
 
 ## Still to build
 
-Two-pointer touch pinch is there but lightly tested. Alt-drag to duplicate with
-a ghost, and a toast system for the file operations, are the two pieces of the
-original prompt not built here.
+Two-pointer touch pinch is written but only lightly tested, since verifying it
+honestly needs a real touchscreen rather than emulated events.
 
 ## Development
 
