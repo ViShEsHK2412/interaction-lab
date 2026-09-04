@@ -50,6 +50,21 @@ arithmetic and you want to own them.
 - Frames cull offscreen without unmounting, so screen state survives
 - `Ctrl/Cmd Shift Backspace` puts the layout back where it started
 
+## How the chrome is built
+
+The lab's own surfaces run on align-ui's design system: one dark ground with
+every surface above it a film of white alpha, three text levels, a four-step
+spacing scale, and two motion curves. `theme.css` holds the tokens and
+`theme.ts` the same system for the code that paints canvas.
+
+Colours are split into a line step and a solid step, and the split is measured
+rather than stylistic. White on `#0d99ff` is 2.99:1, so the accent that draws a
+selection ring cannot also be the fill behind a badge's white text. `theme.test.ts`
+recomputes every ratio the comments claim, so none of them can quietly rot.
+
+Icons are Lucide geometry inlined, not a dependency. Inter is self-hosted as a
+single variable woff2, which covers 400 to 600 with nothing synthesised.
+
 ## Screens are folders
 
 A folder under `src/screens` with a `screen.ts` in it is a screen. There is no
@@ -75,7 +90,8 @@ export default manifest;
 That is what lets duplicate and delete be real. `Cmd/Ctrl D` asks the dev
 server to copy the folder and patches the copy's manifest; `Delete` moves it to
 `.lab-trash`; `Ctrl/Cmd Z` moves it back. `Alt` + double-click on a label
-renames it, writing the manifest. Everything is persisted before the request,
+renames it, writing the manifest. A plain double-click on a label locks into
+that screen, which is what a double-click does everywhere else on the canvas. Everything is persisted before the request,
 so the reload each one triggers can land whenever it likes.
 
 The plugin is `apply: 'serve'`, so none of it exists in a production build. The
