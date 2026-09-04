@@ -117,7 +117,20 @@ function ScreenFrameInner(props: FrameProps) {
         height: size.height,
       }}
     >
-      <div className={styles.frame}>
+      {/*
+        * `inert` while the screen is not locked into, which is the keyboard
+        * half of the shield.
+        *
+        * The shield already stops the pointer reaching an unfocused screen, and
+        * `tabIndex={-1}` took the scroll container out of the tab order, but
+        * neither touches the content inside it. So Tab walked through every
+        * link, button and field of every mounted screen before it reached the
+        * lab's own controls: three demo screens put roughly four hundred stops
+        * in front of the HUD. `inert` removes the whole subtree from the tab
+        * order and from the accessibility tree in one attribute, and drops away
+        * the moment the screen is locked into and genuinely usable.
+        */}
+      <div className={styles.frame} inert={!active}>
         <div className={styles.scroll} ref={scrollCallback} tabIndex={active ? 0 : -1}>
           <ScreenProvider value={env}>{content}</ScreenProvider>
         </div>

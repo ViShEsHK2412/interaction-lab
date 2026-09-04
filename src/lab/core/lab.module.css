@@ -2,6 +2,9 @@
  * Lab chrome. Neutral by design: the lab is a tool, and the projects that live
  * inside it bring their own look. Nothing in here uses a project token, and no
  * screen style reaches out here.
+ *
+ * Every colour, space, radius, duration and curve comes from `theme.css`. The
+ * literal values left below are geometry rather than design, and each says so.
  */
 
 .root {
@@ -12,7 +15,7 @@
      instead of panning, and a pinch zooms the browser instead of the canvas. */
   touch-action: none;
   background: var(--canvas, #f1f1f1);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--font);
   color: #1c1c1c;
   user-select: none;
   cursor: default;
@@ -63,13 +66,13 @@
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-frame);
   background: #fff;
   overflow: clip;
   /* Fixed size makes size containment safe, and it means nothing a screen does
      to its own layout can ever invalidate the canvas around it. */
   contain: strict;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.10);
+  box-shadow: var(--shadow-raised);
 }
 
 .scroll {
@@ -101,11 +104,20 @@
  * The selection ring is drawn at a constant thickness on screen, whatever the
  * zoom, by dividing through --inv-zoom. A 2px ring that scales with the canvas
  * is invisible zoomed out and a slab zoomed in.
+ *
+ * The casing under it is not decoration. `--accent-line` measures 5.82:1 on the
+ * dark ground but 1.32:1 against a mid grey, and the canvas colour is a control
+ * the user can reach, so on the wrong background the ring simply was not there.
+ * One band of the opposite luminance guarantees an edge on any canvas, which is
+ * the same problem, and the same answer, as the frame labels.
  */
 .group[data-selected] .frame,
 .group[data-active] .frame {
-  outline: calc(2px * var(--inv-zoom, 1)) solid #0d99ff;
+  outline: calc(2px * var(--inv-zoom, 1)) solid var(--accent-line);
   outline-offset: calc(2px * var(--inv-zoom, 1));
+  box-shadow:
+    var(--shadow-raised),
+    0 0 0 calc(4px * var(--inv-zoom, 1)) var(--casing);
 }
 
 /*
@@ -123,8 +135,8 @@
 .label {
   position: absolute;
   transform-origin: 0 100%;
-  padding: 0 2px 4px;
-  font-size: 11px;
+  padding: 0 2px var(--space-tight);
+  font-size: var(--type-tag);
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
@@ -134,63 +146,124 @@
   color: var(--label, #5a5a5a);
   pointer-events: auto;
   cursor: default;
+  border-radius: var(--space-tight);
+  transition-property: background-color, color;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.label[data-selected] { color: #0d99ff; }
+/*
+ * Selection used to be a bare colour swap to `--accent-line`, which meant the
+ * only marker of which screen was selected was a hue measuring 1.32:1 on a
+ * mid-grey canvas. A filled chip carries its own background, so white on
+ * `--accent-solid` is 5.30:1 whatever the canvas is, and it reuses the size
+ * badge's treatment rather than inventing a second way to say "this one".
+ */
+.label[data-selected] {
+  padding: 2px var(--space-tight);
+  margin-bottom: 2px;
+  background: var(--accent-solid);
+  color: #fff;
+}
 
-/* The HUD. Bottom centre, out of the way of everything. */
+/* --- The HUD ------------------------------------------------------------
+ *
+ * Bottom centre, out of the way of everything. Radius is concentric: 4px of
+ * padding around 6px controls makes the outer corner 10px, so the two curves
+ * run parallel instead of the inner one tightening against the outer.
+ */
 .hud {
   position: absolute;
-  bottom: 16px;
+  bottom: var(--space-edge);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 8px;
-  background: #1c1c1c;
-  color: #fff;
-  font-size: 12px;
+  gap: 2px;                      /* geometry: the divider's own width */
+  padding: var(--space-tight);
+  border-radius: var(--radius-hud);
+  background: var(--ground);
+  color: var(--text-primary);
+  font-size: var(--type-body);
   pointer-events: auto;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.24);
+  box-shadow: var(--shadow-floating);
 }
 
 .hudButton {
   appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;                      /* geometry: optical gap, icon to its label */
+  /* 28px square is the floor for anything you click here. WCAG's AA baseline
+     is 24x24, and these were 26 tall by a padding accident. */
+  min-width: var(--control);
+  min-height: var(--control);
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: none;
-  color: inherit;
+  color: var(--text-secondary);
   font: inherit;
   font-variant-numeric: tabular-nums;
-  padding: 5px 9px;
+  padding: 0 var(--space-base);
   cursor: pointer;
+  transition-property: background-color, color, scale;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.hudButton:hover { background: rgb(255 255 255 / 0.12); }
-.hudButton:active { background: rgb(255 255 255 / 0.2); }
+/*
+ * Hover raises the button one step up the surface ladder, which is also why
+ * its text goes from secondary to primary rather than staying put: tertiary
+ * loses contrast the moment there is a film underneath it.
+ */
+.hudButton:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/*
+ * Press is felt, not seen. 0.96 exactly: below 0.95 the button visibly
+ * collapses, and a control this small has nowhere to collapse to.
+ */
+.hudButton:active { scale: 0.96; }
+
+.hudButton[data-on] {
+  background: var(--surface-5);
+  color: var(--text-primary);
+}
+
+/*
+ * The one focus rule for the whole HUD. Every control here was keyboard
+ * reachable with nothing to show for it, which is the plainest accessibility
+ * failure there is. `:focus-visible`, so a mouse press does not leave a ring
+ * behind; the browser decides which is which.
+ */
+.hudButton:focus-visible,
+.hudSwatch:focus-visible,
+.swatch:focus-visible,
+.play:focus-visible,
+.toastClose:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: 1px;
+}
 
 .hudDivider {
   width: 1px;
   align-self: stretch;
-  margin: 2px;
-  background: rgb(255 255 255 / 0.16);
+  margin: 2px;                   /* geometry: inset from the bar's own padding */
+  background: var(--hairline);
 }
 
 .hudBadge {
-  padding: 5px 9px;
-  color: rgb(255 255 255 / 0.72);
+  padding: 0 var(--space-base);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
 .hudBadge b {
-  color: #fff;
+  color: var(--text-primary);
   font-weight: 500;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hud { transition: none; }
 }
 
 /*
@@ -215,13 +288,19 @@
 .edge[data-dir='w'] { top: 0; bottom: 0; left: calc(var(--reach) * -1); width: calc(var(--reach) * 2); cursor: ew-resize; }
 .edge[data-dir='e'] { top: 0; bottom: 0; right: calc(var(--reach) * -1); width: calc(var(--reach) * 2); cursor: ew-resize; }
 
+/*
+ * The corner's white fill has the same problem the selection ring had: on a
+ * white canvas it is a white square on white. The casing answers it the same
+ * way.
+ */
 .corner {
   position: absolute;
   width: calc(8px * var(--inv-zoom, 1));
   height: calc(8px * var(--inv-zoom, 1));
-  border: calc(1.5px * var(--inv-zoom, 1)) solid #0d99ff;
+  border: calc(1.5px * var(--inv-zoom, 1)) solid var(--accent-line);
   border-radius: calc(2px * var(--inv-zoom, 1));
   background: #fff;
+  box-shadow: 0 0 0 calc(1px * var(--inv-zoom, 1)) var(--casing);
   --half: calc(4px * var(--inv-zoom, 1));
 }
 
@@ -237,7 +316,7 @@
  */
 .snapLine {
   position: absolute;
-  background: #f24822;
+  background: var(--measure-line);
   pointer-events: none;
 }
 
@@ -247,15 +326,15 @@
 /* The size readout that tracks under a frame while it is resized. */
 .sizeBadge {
   position: absolute;
-  padding: 3px 7px;
-  border-radius: 4px;
-  background: #0d99ff;
+  padding: 3px 7px;              /* geometry: optical inset around 11px digits */
+  border-radius: var(--space-tight);
+  background: var(--accent-solid);
   color: #fff;
-  font-size: 11px;
+  font-size: var(--type-tag);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
-  transform: translate(-50%, 8px);
+  transform: translate(-50%, var(--space-base));
 }
 
 /* Under everything: the root's first child, so frames paint over it. */
@@ -265,8 +344,6 @@
   left: 0;
   pointer-events: none;
 }
-
-.hudButton[data-on] { background: rgb(255 255 255 / 0.18); }
 
 /*
  * The rulers sit above the frames, and only take pointer events when they are
@@ -291,54 +368,126 @@
   pointer-events: none;
 }
 
-/* The colour well. A native picker, wrapped so it is a swatch rather than the
-   browser's own control, which no two browsers draw the same. */
-.hudSwatch {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 26px;
-  cursor: pointer;
-}
-
-.hudSwatch span {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.24);
-}
-
-.hudSwatch input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-/* Above the HUD, since a toast is a reply to something you just did. */
+/* --- Toasts -------------------------------------------------------------
+ *
+ * Above the HUD, since a toast is a reply to something you just did. The
+ * container is always in the DOM, even with nothing in it: a polite live region
+ * that appears at the same moment as its text is announced unreliably, and
+ * these carry the results of real file operations.
+ */
 .toasts {
   position: absolute;
-  bottom: 60px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: var(--space-edge);
+  /*
+   * Bottom left, not bottom centre.
+   *
+   * Centred, the stack sat directly on top of anything the HUD opened: a
+   * warning about a bad hex landed across the colour popover that had just
+   * raised it, and clipped its own text against the Save button. A report must
+   * never cover the control that produced it. The left corner is empty at every
+   * zoom and in every mode, and it is where this kind of message lives in most
+   * tools anyway.
+   */
+  left: var(--space-edge);
   display: grid;
-  gap: 6px;
-  justify-items: center;
+  gap: 6px;                      /* geometry: under the base step, so a stack reads as one group */
+  justify-items: start;
   pointer-events: none;
 }
 
-.toast {
-  padding: 7px 14px;
-  border-radius: 7px;
-  background: #1c1c1c;
-  color: #fff;
-  font-size: 12px;
-  white-space: nowrap;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.24);
+/*
+ * Each live region is a grid item, so it has to carry the stack's layout
+ * itself. `display: contents` would be tidier and is the wrong tool: it can
+ * drop the element from the accessibility tree, which is the one thing these
+ * two wrappers exist for.
+ */
+.toastGroup {
+  display: grid;
+  gap: 6px;                      /* geometry: matches the stack's own gap */
+  justify-items: start;
 }
 
-.toast[data-tone='warn'] { background: #f24822; }
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-base);
+  padding: 7px var(--space-roomy);
+  border-radius: var(--radius-control);
+  background: var(--ground);
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  white-space: nowrap;
+  box-shadow: var(--shadow-floating);
+  pointer-events: auto;
+  /*
+   * Enter: 8px up and a fade, on the UI curve. @starting-style animates the
+   * insert with no JS and no keyframes, which matters because keyframes restart
+   * from zero, so a second toast arriving mid-animation would make the first
+   * one jump. A transition is interruptible by construction.
+   */
+  transition-property: opacity, translate;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  opacity: 1;
+  translate: 0 0;
+}
+
+@starting-style {
+  .toast {
+    opacity: 0;
+    translate: 0 var(--space-base);
+  }
+}
+
+/*
+ * Exit: shorter travel, and the accelerating curve. An exit is not an entrance
+ * played backwards. The user has already read it, so the job is to leave.
+ */
+.toast[data-leaving] {
+  opacity: 0;
+  translate: 0 var(--space-tight);
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.3, 0, 1, 1);
+}
+
+/*
+ * Tone is an icon, not a fill. Red is what a measurement looks like on this
+ * canvas, permanently, so it cannot also be what an error looks like. A red
+ * panel also puts the whole meaning on a hue, which leaves nothing for anyone
+ * who cannot separate it, and white on #f24822 measures 3.67:1 besides. The
+ * hue survives on the glyph, where it reinforces the message instead of being
+ * the message.
+ */
+.toastIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+}
+
+.toast[data-tone='warn'] .toastIcon { color: var(--danger); }
+
+.toastClose {
+  flex: none;
+  display: grid;
+  place-items: center;
+  /* 24px is WCAG's AA floor, and this sits inside a 36px-tall toast. */
+  width: 24px;
+  height: 24px;
+  margin-right: -6px;            /* geometry: pulls the optical edge back to the padding */
+  padding: 0;
+  border: 0;
+  border-radius: var(--space-tight);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition-property: background-color, color, scale;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.toastClose:hover { background: var(--surface-2); color: var(--text-primary); }
+.toastClose:active { scale: 0.96; }
 
 /*
  * The duplicate ghost. In the layer, so it scales with the canvas: it stands
@@ -349,53 +498,94 @@
   position: absolute;
   top: 0;
   left: 0;
-  border: calc(1.5px * var(--inv-zoom, 1)) dashed #0d99ff;
-  border-radius: 8px;
-  background: rgb(13 153 255 / 0.06);
+  border: calc(1.5px * var(--inv-zoom, 1)) dashed var(--accent-line);
+  border-radius: var(--radius-frame);
+  background: var(--accent-wash);
   pointer-events: none;
 }
 
 /*
- * The play button, pinned above the focused frame's top-right corner. Chrome,
+ * The fill toggle, pinned above the focused frame's top-right corner. Chrome,
  * so it is placed by the camera write rather than living in the layer, and it
  * stays the same size at every zoom.
  */
 .play {
   position: absolute;
   transform-origin: 100% 100%;
-  margin: -26px 0 0 -22px;
-  width: 20px;
-  height: 20px;
+  margin: -30px 0 0 -24px;       /* geometry: clears the frame's corner and ring */
+  width: 24px;
+  height: 24px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 4px;
-  background: #0d99ff;
+  border-radius: var(--radius-control);
+  background: var(--accent-solid);
   color: #fff;
-  font-size: 9px;
-  line-height: 1;
   cursor: pointer;
   pointer-events: auto;
+  transition-property: background-color, scale;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.play:hover { background: #0b86e0; }
+/*
+ * The visible button is 24px, which clears WCAG's floor but is small for a
+ * pointer. The hit area is pushed out to 32px without moving any pixels.
+ * Nothing else comes within 24px of it, so the two never overlap.
+ */
+.play::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
 
-/* The colour popover, above the HUD it belongs to. */
+/*
+ * Tucked inside the frame when there was no room above it. The margin that
+ * lifts it clear of the corner is what has to go; everything else stays, so
+ * the button is the same button in both places.
+ */
+.play[data-inside] { margin-top: 4px; }
+
+.play:hover { background: var(--accent-line); }
+.play:active { scale: 0.96; }
+
+/* --- The colour popover -------------------------------------------------
+ *
+ * 8px of padding around 6px controls, so the outer corner is 14px.
+ */
 .colour { position: relative; }
 
 .colourPopover {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + var(--space-base));
   left: 50%;
-  transform: translateX(-50%);
   display: grid;
-  gap: 8px;
-  width: 196px;
-  padding: 10px;
-  border-radius: 8px;
-  background: #1c1c1c;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.32);
+  gap: var(--space-base);
+  width: 196px;                  /* geometry: ten 20px swatches and their gaps */
+  padding: var(--space-base);
+  border-radius: var(--radius-popover);
+  background: var(--ground);
+  box-shadow: var(--shadow-floating);
+  /*
+   * Scaled from the trigger below it, not from its own middle. The CSS default
+   * of `center` is wrong for almost every popover: a thing summoned by a button
+   * should look like it came out of that button. 0.95, never 0, because nothing
+   * appears from nothing.
+   */
+  transform-origin: bottom center;
+  transform: translateX(-50%) scale(1);
+  opacity: 1;
+  transition-property: opacity, transform;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@starting-style {
+  .colourPopover {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.95);
+  }
 }
 
 /*
@@ -408,10 +598,10 @@
 
 .colourPicker {
   width: 100%;
-  height: 32px;
+  height: 32px;                  /* geometry: enough height for the native swatch to read as one */
   padding: 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: none;
   cursor: pointer;
 }
@@ -421,40 +611,137 @@
 .hexField {
   flex: 1;
   min-width: 0;
-  padding: 5px 8px;
-  border: 1px solid rgb(255 255 255 / 0.16);
-  border-radius: 5px;
-  background: rgb(255 255 255 / 0.06);
-  color: #fff;
+  min-height: var(--control);
+  padding: 0 var(--space-base);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  background: var(--surface-1);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--type-body);
   font-variant-numeric: tabular-nums;
 }
 
-.hexField:focus { outline: 1px solid #0d99ff; outline-offset: -1px; }
+.hexField::placeholder { color: var(--text-tertiary); }
 
-/* One row, which is what the ten-swatch cap is for. */
-.swatchRow { display: flex; flex-wrap: wrap; gap: 5px; }
-
-.swatch {
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.2);
+.hexField:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: -1px;          /* geometry: inset, so the field keeps its width */
+  border-color: transparent;
 }
 
-/* Now a button rather than a label wrapping an input. */
+/*
+ * The popover's one filled control.
+ *
+ * Save was a ghost button identical to the HUD's, which left the panel with no
+ * primary action and the accent spent on nothing. Filled, it reads as the
+ * thing to press across the room; white on `--accent-solid` measures 5.30:1,
+ * which is the whole reason that step exists.
+ */
+.saveButton {
+  background: var(--accent-solid);
+  color: #fff;
+}
+
+.saveButton:hover {
+  background: var(--accent-line);
+  color: #fff;
+}
+
+/* One row, which is what the ten-swatch cap is for. */
+.swatchRow { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.swatch {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--space-tight);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  transition-property: scale;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/*
+ * 20px visible, 24px to hit. The 6px gap means neighbouring hit areas stop 2px
+ * short of each other rather than overlapping, which would make the swatch you
+ * land on a question of which element happens to paint last.
+ */
+.swatch::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+}
+
+.swatch:active { scale: 0.96; }
+
+/* The colour well: a button showing the current canvas colour. */
 .hudSwatch {
   position: relative;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 26px;
+  width: var(--control);
+  height: var(--control);
   padding: 0;
   border: 0;
+  border-radius: var(--radius-control);
   background: none;
+  color: var(--text-secondary);
   cursor: pointer;
+  transition-property: background-color, scale;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.hudSwatch:hover { background: var(--surface-2); }
+.hudSwatch:active { scale: 0.96; }
+.hudSwatch[data-on] { background: var(--surface-5); }
+
+.hudSwatch span {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--space-tight);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+
+/*
+ * Reduced motion means gentler, not absent. The fades stay, because they are
+ * what stops a toast appearing out of nowhere; everything that moves or changes
+ * size goes, because movement is the part that causes trouble.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .toast[data-leaving] {
+    translate: none;
+    transition-property: opacity;
+  }
+
+  .colourPopover {
+    transform: translateX(-50%);
+    transition-property: opacity;
+  }
+
+  @starting-style {
+    .colourPopover { transform: translateX(-50%); }
+    .toast { translate: none; }
+  }
+
+  .hudButton,
+  .hudSwatch,
+  .swatch,
+  .play,
+  .toastClose {
+    transition-property: background-color, color;
+  }
+
+  .hudButton:active,
+  .hudSwatch:active,
+  .swatch:active,
+  .play:active,
+  .toastClose:active {
+    scale: 1;
+  }
 }

@@ -1,4 +1,5 @@
 import type { Box } from './camera';
+import { MEASURE } from './theme';
 
 /**
  * Figma's Alt-hover measurement: select one frame, hold Alt, hover another,
@@ -127,7 +128,8 @@ export function paintMeasurements(
   viewport: { width: number; height: number },
   selected: Box,
   hovered: Box,
-  colour = '#f24822',
+  colour = MEASURE.line,
+  chip = MEASURE.chip,
 ): void {
   const dpr = window.devicePixelRatio || 1;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -186,7 +188,8 @@ export function paintMeasurements(
     const label = formatDistance(segment.value);
     const w = ctx.measureText(label).width + 8;
     const cx = (a + b) / 2;
-    ctx.fillStyle = colour;
+    // The chip, not the line: white on the line colour measures 3.67:1.
+    ctx.fillStyle = chip;
     if (horizontal) {
       ctx.fillRect(Math.round(cx - w / 2), Math.round(at) - 17, w, 15);
       ctx.fillStyle = '#fff';

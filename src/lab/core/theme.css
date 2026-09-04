@@ -1,0 +1,144 @@
+/*
+ * The tokens, as custom properties. `theme.ts` is the same system for the code
+ * that paints canvas, and carries the reasoning and the contrast measurements
+ * for every value here.
+ *
+ * Scoped to the lab's own root rather than `:root`, so a screen mounted inside
+ * the canvas never inherits chrome tokens by accident. The lab is a shell; the
+ * projects inside it bring their own look.
+ */
+
+/*
+ * Inter, self-hosted.
+ *
+ * The stack named Inter from the start and nothing ever loaded it, so every
+ * measurement in this file was taken against whatever the system happened to
+ * supply. A font named but not served is worse than one never named: the design
+ * says one thing and the screen shows another.
+ *
+ * One file, not three. Inter ships as a variable font, so the same 47 KB latin
+ * subset serves 400, 500 and 600 off the `wght` axis, and `font-weight: 400
+ * 600` tells the browser that rather than letting it synthesise a face the
+ * family already contains. Self-hosted rather than linked, because a tool that
+ * runs against localhost should not need the network to render its own chrome.
+ *
+ * `swap` so the fallback shows immediately: the lab is a dev tool and a blank
+ * HUD while a font negotiates is worse than one that reflows once.
+ */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('../fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+[data-lab-root] {
+  /* ── Ground and the surface ladder ────────────────────────────────────── */
+  --ground: #1a1a1a;
+  --surface-1: rgb(255 255 255 / 0.07);
+  --surface-2: rgb(255 255 255 / 0.08);
+  --surface-3: rgb(255 255 255 / 0.1);
+  --surface-4: rgb(255 255 255 / 0.12);
+  --surface-5: rgb(255 255 255 / 0.15);
+  --surface-6: rgb(255 255 255 / 0.2);
+
+  /*
+   * Three text levels, measured against the ground:
+   *   primary   0.90 -> 14.22:1
+   *   secondary 0.60 ->  6.93:1
+   *   tertiary  0.46 ->  4.61:1
+   *
+   * Tertiary is a ground-only value. On surface-1 it falls to 4.27:1 and on
+   * surface-6 to 3.34:1, so a raised region gets secondary instead. That is a
+   * constraint align-ui never had to state, because its panels are one surface
+   * and the HUD's buttons raise on hover.
+   */
+  --text-primary: rgb(255 255 255 / 0.9);
+  --text-secondary: rgb(255 255 255 / 0.6);
+  --text-tertiary: rgb(255 255 255 / 0.46);
+
+  --hairline: rgb(255 255 255 / 0.12);
+  /*
+   * A heavier hairline, for a swatch that has to read as a bordered chip
+   * against whatever colour it is showing. 0.12 disappears on a pale swatch.
+   */
+  --hairline-strong: rgb(255 255 255 / 0.24);
+
+  /* ── Accents. Two steps of each hue; theme.ts says why. ───────────────── */
+  --accent-line: #0d99ff;
+  --accent-solid: #0a6dc0;
+  --measure-line: #f24822;
+  --measure-chip: #c33513;
+  --danger: #e5533d;
+  /* The accent at wash strength, for a fill that has to stay behind content. */
+  --accent-wash: rgb(13 153 255 / 0.06);
+
+  /*
+   * A casing for anything drawn straight onto the canvas. The canvas colour is
+   * a control the user can reach, and `--accent-line` measures 1.32:1 against a
+   * mid grey, so a selection ring on its own can vanish completely. One
+   * hairline of the opposite luminance under the ring guarantees an edge on
+   * any ground. `data-canvas-theme` is already computed for the frame labels.
+   */
+  --casing: rgb(0 0 0 / 0.4);
+}
+
+[data-lab-root][data-canvas-theme='dark'] {
+  --casing: rgb(255 255 255 / 0.4);
+}
+
+[data-lab-root] {
+  /* ── Spacing. Four steps, and no value off them. ──────────────────────── */
+  --space-tight: 4px;
+  --space-base: 8px;
+  --space-roomy: 12px;
+  --space-edge: 16px;
+
+  /* One control height, so every floating surface shares a rhythm. */
+  --control: 28px;
+
+  /*
+   * Radius, concentric. Outer = inner + padding, so a nested corner runs
+   * parallel to the one outside it instead of tightening against it.
+   *   HUD:     6 + 4 padding = 10
+   *   popover: 6 + 8 padding = 14
+   */
+  --radius-control: 6px;
+  --radius-hud: 10px;
+  --radius-popover: 14px;
+  --radius-frame: 8px;
+
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --type-title: 13px;
+  --type-body: 12px;
+  --type-tag: 11px;
+
+  /* ── Motion ───────────────────────────────────────────────────────────── */
+  --motion-ui: 160ms cubic-bezier(0.2, 0, 0, 1);
+  --motion-exit: 160ms cubic-bezier(0.3, 0, 1, 1);
+
+  /*
+   * Shadow. align-ui's two layers, opened out to three: one tight layer to seat
+   * the surface on its ground, one mid, one wide and faint for the ambient
+   * fall-off. All cast straight down, so every floating thing in the lab is lit
+   * from the same place.
+   *
+   * Pure black at low alpha rather than the usual deep neutral, because these
+   * fall on a canvas colour the user picked. A tinted shadow reads as grime
+   * the moment the canvas moves toward the tint's complement.
+   */
+  --shadow-raised:
+    0 1px 2px rgb(0 0 0 / 0.16),
+    0 4px 10px rgb(0 0 0 / 0.14),
+    0 12px 28px rgb(0 0 0 / 0.1);
+  --shadow-floating:
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 6px 16px rgb(0 0 0 / 0.18),
+    0 18px 40px rgb(0 0 0 / 0.14);
+}

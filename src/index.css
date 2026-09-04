@@ -16,5 +16,9 @@ html, body {
 
 body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Once, on the root layout, never per component. macOS renders text heavier
+     than the design intends and both engines need telling. The face itself is
+     declared in the lab's theme.css, which is also where the reasoning is. */
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }

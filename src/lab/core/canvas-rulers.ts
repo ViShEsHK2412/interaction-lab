@@ -1,4 +1,5 @@
 import type { Camera, Size } from './camera';
+import { MEASURE } from './theme';
 import { formatTick, RULER_SIZE, ticksFor, type Guide } from './rulers';
 
 /**
@@ -15,6 +16,8 @@ export interface RulerColours {
   line: string;
   label: string;
   guide: string;
+  /** The filled label behind white text. See `MEASURE` for why it differs. */
+  guideChip: string;
   band: string;
 }
 
@@ -22,7 +25,8 @@ export const LIGHT_RULER: RulerColours = {
   background: 'rgb(255 255 255 / 0.92)',
   line: 'rgb(0 0 0 / 0.28)',
   label: 'rgb(0 0 0 / 0.55)',
-  guide: '#f24822',
+  guide: MEASURE.line,
+  guideChip: MEASURE.chip,
   band: 'rgb(13 153 255 / 0.18)',
 };
 
@@ -30,7 +34,8 @@ export const DARK_RULER: RulerColours = {
   background: 'rgb(28 28 28 / 0.92)',
   line: 'rgb(255 255 255 / 0.28)',
   label: 'rgb(255 255 255 / 0.6)',
-  guide: '#f24822',
+  guide: MEASURE.line,
+  guideChip: MEASURE.chip,
   band: 'rgb(13 153 255 / 0.28)',
 };
 
@@ -177,7 +182,7 @@ export function paintGuideLabels(
     const at = Math.round((guide.at + (guide.axis === 'x' ? camera.x : camera.y)) * camera.z);
     const label = formatTick(guide.at);
     const w = ctx.measureText(label).width + 6;
-    ctx.fillStyle = colours.guide;
+    ctx.fillStyle = colours.guideChip;
     if (guide.axis === 'x') {
       ctx.fillRect(at + 1, 2, w, 13);
       ctx.fillStyle = '#fff';

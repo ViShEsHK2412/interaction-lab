@@ -27,6 +27,8 @@ import {
   type Handle, type SnapLine,
 } from './core/snapping';
 import { SCREENS } from './screens';
+import { Icon } from './core/icons';
+import './core/theme.css';
 import styles from './core/lab.module.css';
 
 /** How long the camera takes to travel, and the pause that counts as settled. */
@@ -41,6 +43,13 @@ const IDLE_MS = 160;
 const NUDGE_COMMIT_MS = 400;
 /** Space left between frames when they are tidied into a row. */
 const CLEANUP_GAP = 200;
+
+/**
+ * How far below the top of the viewport the focused frame's edge has to be
+ * before the fill toggle can hang above it. 30px of button and margin, plus the
+ * 4px the selection ring reaches.
+ */
+const PLAY_REACH = 34;
 
 /**
  * Three modes, and Escape walks back one at a time.
@@ -461,7 +470,18 @@ export function InteractionLab() {
     if (play && focused) {
       const x = (focused.x + focused.width + camera.x) * camera.z;
       const y = (focused.y + camera.y) * camera.z;
-      play.style.transform = `translate(${toDomPrecision(x)}px, ${toDomPrecision(y)}px)`;
+      /*
+       * Above the corner when there is room, inside it when there is not.
+       *
+       * The button hangs 30px above the frame's top edge, and focus mode fits
+       * the frame to the viewport, so in the ordinary case it sat at y = -30
+       * and could not be clicked at all. Only the shortcut worked, and only if
+       * you knew it. Below the threshold it tucks inside the frame instead,
+       * which is where Figma keeps this kind of chrome anyway.
+       */
+      if (y >= PLAY_REACH) delete play.dataset['inside'];
+      else play.dataset['inside'] = '';
+      play.style.transform = `translate(${toDomPrecision(x)}px, ${toDomPrecision(Math.max(y, PLAY_REACH))}px)`;
     }
   }, []);
 
@@ -1296,6 +1316,9 @@ export function InteractionLab() {
     <div
       className={styles.root}
       ref={rootCallback}
+      /* The tokens hang off this, not off :root, so a screen mounted inside the
+         canvas never inherits chrome tokens by accident. */
+      data-lab-root=""
       data-mode={mode}
       /*
        * Chrome that sits directly on the canvas flips with the canvas's own
@@ -1380,7 +1403,18 @@ export function InteractionLab() {
               // no free edge to catch.
               onDragStart(def.id, e);
             }}
-            onDoubleClick={() => {
+            onDoubleClick={(e) => {
+              /*
+               * Alt renames; a plain double-click locks in, which is what a
+               * double-click does everywhere else on this canvas.
+               *
+               * Without the modifier the label was the one place where the
+               * gesture for "open this screen" instead threw up a rename
+               * prompt, which is both a surprise and a blocking native dialog.
+               * The README has documented the Alt version since the feature
+               * landed; the handler had simply never checked for it.
+               */
+              if (!e.altKey) { lockInto(def.id); return; }
               const next = window.prompt('Rename this screen', def.name);
               if (!next || next === def.name) return;
               void labFs.rename(def.dir, next).then((ok) => {
@@ -1402,9 +1436,12 @@ export function InteractionLab() {
             title={mode === 'fill'
               ? 'Back to the frame (Shift F)'
               : 'Give this screen the whole window (Shift F)'}
+            aria-label={mode === 'fill'
+              ? 'Back to the frame'
+              : 'Give this screen the whole window'}
             onClick={() => (mode === 'fill' ? exitFill() : activeId && enterFill(activeId))}
           >
-            {mode === 'fill' ? '■' : '▶'}
+            <Icon name={mode === 'fill' ? 'minimize' : 'maximize'} size={14} strokeWidth={2} />
           </button>
         )}
 
@@ -1413,8 +1450,9 @@ export function InteractionLab() {
             type="button"
             className={styles.hudButton}
             onClick={fitAll}
-            title="Zoom to fit everything"
+            title="Zoom to fit everything (Shift 1)"
           >
+            <Icon name="fit" />
             {zoomLabel}%
           </button>
           {mode !== 'explore' && (
@@ -1433,16 +1471,21 @@ export function InteractionLab() {
               type="button"
               className={styles.hudSwatch}
               title="Canvas colour"
+              aria-label="Canvas colour"
+              aria-haspopup="dialog"
+              aria-expanded={colourOpen}
+              data-on={colourOpen || undefined}
               onClick={() => { setHexDraft(canvasColour); setColourOpen((v) => !v); }}
             >
               <span style={{ background: canvasColour }} />
             </button>
 
             {colourOpen && (
-              <div className={styles.colourPopover}>
+              <div className={styles.colourPopover} role="dialog" aria-label="Canvas colour">
                 <input
                   type="color"
                   className={styles.colourPicker}
+                  aria-label="Pick a canvas colour"
                   value={canvasColour}
                   onChange={(e) => applyColour(e.target.value)}
                 />
@@ -1462,10 +1505,11 @@ export function InteractionLab() {
                     className={styles.hexField}
                     value={hexDraft}
                     spellCheck={false}
+                    placeholder="#1a1a1a"
                     aria-label="Canvas colour, as hex"
                     onChange={(e) => setHexDraft(e.target.value)}
                   />
-                  <button type="submit" className={styles.hudButton}>Save</button>
+                  <button type="submit" className={`${styles.hudButton} ${styles.saveButton}`}>Save</button>
                 </form>
 
                 {/* No presets. The row fills with colours you chose, which
@@ -1479,6 +1523,7 @@ export function InteractionLab() {
                         className={styles.swatch}
                         style={{ background: c }}
                         title={c}
+                        aria-label={`Use ${c}`}
                         onClick={() => applyColour(c)}
                       />
                     ))}
@@ -1491,29 +1536,34 @@ export function InteractionLab() {
             type="button"
             className={styles.hudButton}
             data-on={showGrid || undefined}
+            aria-pressed={showGrid}
             onClick={() => { setShowGrid((v) => !v); requestAnimationFrame(() => paintGrid()); }}
             title="The pixel grid, ten units"
           >
+            <Icon name="grid" />
             Grid
           </button>
           <button
             type="button"
             className={styles.hudButton}
             data-on={showRulers || undefined}
+            aria-pressed={showRulers}
             onClick={() => {
               setShowRulers((v) => { showRulersRef.current = !v; return !v; });
               requestAnimationFrame(() => paintRulerRef.current?.());
             }}
             title="Rulers and guides (Shift R). Drag out of a rule to place one"
           >
+            <Icon name="rulers" />
             Rulers
           </button>
           <button
             type="button"
             className={styles.hudButton}
             onClick={resetLayout}
-            title="Put every screen back where the registry says"
+            title="Put every screen back where the registry says (Ctrl/Cmd Shift Backspace)"
           >
+            <Icon name="reset" />
             Reset
           </button>
         </div>
