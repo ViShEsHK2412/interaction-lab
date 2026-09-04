@@ -18,7 +18,7 @@ import {
 import { paintMeasurements } from './core/measurements';
 import { ScreenFrame } from './core/screen-frame';
 import {
-  resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
+  distributeRow, resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
   type Handle, type SnapLine,
 } from './core/snapping';
 import { SCREENS } from './screens';
@@ -34,6 +34,10 @@ const IDLE_MS = 160;
  * many times.
  */
 const NUDGE_COMMIT_MS = 400;
+/** Space left between frames when they are tidied into a row. */
+const CLEANUP_GAP = 200;
+/** The canvas colour, which the grid and the dim overlays both read. */
+const CANVAS_KEY = 'interaction-lab:canvas:v1';
 
 /**
  * Three modes, and Escape walks back one at a time.
@@ -203,6 +207,9 @@ export function InteractionLab() {
   paintMeasureRef.current = paintMeasureLayer;
 
   const gridRef = useRef<HTMLCanvasElement | null>(null);
+  const [canvasColour, setCanvasColour] = useState<string>(() => {
+    try { return localStorage.getItem(CANVAS_KEY) || '#f1f1f1'; } catch { return '#f1f1f1'; }
+  });
   const [showGrid, setShowGrid] = useState(true);
   const showGridRef = useRef(showGrid);
   showGridRef.current = showGrid;
@@ -906,6 +913,26 @@ export function InteractionLab() {
         return { x: r.width / 2, y: r.height / 2 };
       };
 
+      // Ctrl+C, not Cmd+C: copying is Cmd, and a canvas has nothing to copy.
+      if (e.ctrlKey && !e.metaKey && e.code === 'KeyC') {
+        e.preventDefault();
+        commitNudge();
+        const before = { ...layoutRef.current };
+        const placed = distributeRow(
+          Object.entries(before).map(([id, b]) => ({ ...b, id })),
+          CLEANUP_GAP,
+        );
+        const after: Record<string, Box> = { ...before };
+        for (const [id, at] of Object.entries(placed)) {
+          const box = before[id];
+          if (box) after[id] = { ...box, ...at };
+        }
+        const command: Command = { kind: 'layout', from: before, to: after };
+        if (!isNoop(command)) history.push(command);
+        applyLayout(after);
+        fitTo(boxesOf(after));
+        return;
+      }
       if (e.shiftKey && e.code === 'KeyR') {
         e.preventDefault();
         setShowRulers((v) => { showRulersRef.current = !v; return !v; });
@@ -1002,8 +1029,9 @@ export function InteractionLab() {
     // Capture, so a focused screen cannot swallow Escape before the lab sees it.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [activeId, animateTo, applyCamera, commitGuides, commitNudge, enterFill, exitFill,
-      exitLock, fitAll, fitTo, lockInto, paintFrame, persist, stepHistory, store]);
+  }, [activeId, animateTo, applyCamera, applyLayout, commitGuides, commitNudge, enterFill,
+      exitFill, exitLock, fitAll, fitTo, history, lockInto, paintFrame, persist,
+      stepHistory, store]);
 
   // Layout changes from the keyboard still have to reach the DOM and storage.
   layoutRef.current = layout;
@@ -1016,7 +1044,12 @@ export function InteractionLab() {
   const activeName = SCREENS.find((s) => s.id === activeId)?.name ?? '';
 
   return (
-    <div className={styles.root} ref={rootCallback} data-mode={mode}>
+    <div
+      className={styles.root}
+      ref={rootCallback}
+      data-mode={mode}
+      style={{ ['--canvas' as string]: canvasColour }}
+    >
       <canvas className={styles.grid} ref={gridRef} aria-hidden="true" />
       <canvas className={styles.measure} ref={measureRef} aria-hidden="true" />
       <div ref={keysCallback} hidden />
@@ -1113,6 +1146,21 @@ export function InteractionLab() {
             </>
           )}
           <span className={styles.hudDivider} />
+          <label className={styles.hudSwatch} title="Canvas colour">
+            <span style={{ background: canvasColour }} />
+            <input
+              type="color"
+              value={canvasColour}
+              onChange={(e) => {
+                const next = e.target.value;
+                setCanvasColour(next);
+                try { localStorage.setItem(CANVAS_KEY, next); } catch { /* disabled */ }
+                // The grid's own colour follows the background's luminance, so
+                // recolouring the canvas has to repaint it.
+                requestAnimationFrame(() => { paintGrid(); paintRulerRef.current?.(); });
+              }}
+            />
+          </label>
           <button
             type="button"
             className={styles.hudButton}
