@@ -6,6 +6,7 @@ import {
 } from './core/camera';
 import { bindCanvasInput, transformFor } from './core/use-canvas-input';
 import { clearLayout, createSaver, loadLayout, type StoredLayout } from './core/persistence';
+import { affectedIds, applyCommand, createHistory, isNoop, type Command } from './core/history';
 import { ScreenFrame } from './core/screen-frame';
 import {
   resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
@@ -17,6 +18,13 @@ import styles from './core/lab.module.css';
 /** How long the camera takes to travel, and the pause that counts as settled. */
 const ANIM_MS = 320;
 const IDLE_MS = 160;
+/**
+ * How long a run of arrow presses stays open as one undoable gesture. Holding
+ * an arrow key fires thirty times and is one thing you did; thirty undo
+ * entries turns Ctrl+Z into a key you hammer without being able to tell how
+ * many times.
+ */
+const NUDGE_COMMIT_MS = 400;
 
 type Mode = 'explore' | 'focus';
 type Layout = Record<string, { x: number; y: number; width: number; height: number }>;
@@ -74,6 +82,7 @@ export function InteractionLab() {
 
   const store = useRef(createCameraStore(boot.current.camera)).current;
   const saver = useRef(createSaver()).current;
+  const history = useRef(createHistory()).current;
 
   const [layout, setLayout] = useState<Layout>(boot.current.layout);
   const [selected, setSelected] = useState<string | null>(null);
@@ -321,6 +330,7 @@ export function InteractionLab() {
     Object.entries(layoutRef.current).filter(([k]) => k !== id).map(([, b]) => b);
 
   /** Write a frame's geometry straight to its element, mid-gesture. */
+  const paintFrameRef = useRef<((id: string, boxNow: Box) => void) | null>(null);
   const paintFrame = useCallback((id: string, boxNow: Box) => {
     const el = document.querySelector<HTMLElement>(`[data-screen-id="${id}"].${styles.group}`);
     if (!el) return;
@@ -328,15 +338,72 @@ export function InteractionLab() {
     el.style.width = `${boxNow.width}px`;
     el.style.height = `${boxNow.height}px`;
   }, []);
+  paintFrameRef.current = paintFrame;
 
-  /** One place both gestures end, so nothing can commit half of it. */
-  const commitGesture = useCallback((id: string, boxNow: Box) => {
-    layoutRef.current = { ...layoutRef.current, [id]: boxNow };
+  /**
+   * One place both gestures end, so nothing can commit half of it, and the one
+   * place a history entry is written. One entry per completed gesture, with
+   * the values captured at its start: coalescing by construction rather than
+   * by merging sixty per-frame entries afterwards.
+   */
+  const commitGesture = useCallback((id: string, from: Box, to: Box) => {
+    layoutRef.current = { ...layoutRef.current, [id]: to };
     setLayout({ ...layoutRef.current });
     clearSnapLines();
+    commitNudgeRef.current?.();
+    const command: Command = { kind: 'move', id, from: { ...from }, to: { ...to } };
+    // A drag that ended where it started is not a thing you did.
+    if (!isNoop(command)) history.push(command);
     persist();
     recull();
-  }, [clearSnapLines, persist, recull]);
+  }, [clearSnapLines, history, persist, recull]);
+
+  /**
+   * A run of arrow presses, still open.
+   *
+   * Held here rather than pushed per keypress, and flushed by anything that
+   * pushes its own entry, so the command order stays truthful: undo right
+   * after a nudge undoes the nudge.
+   */
+  const nudgeRef = useRef<{ id: string; from: Box; timer: number } | null>(null);
+
+  const commitNudge = useCallback(() => {
+    const pending = nudgeRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    nudgeRef.current = null;
+    const to = layoutRef.current[pending.id];
+    if (!to) return;
+    const command: Command = { kind: 'move', id: pending.id, from: pending.from, to: { ...to } };
+    if (!isNoop(command)) history.push(command);
+  }, [history]);
+
+  /** Put a layout on screen, from wherever it came from. */
+  const applyLayout = useCallback((next: Record<string, Box>) => {
+    layoutRef.current = next;
+    setLayout({ ...next });
+    for (const [id, boxNow] of Object.entries(next)) paintFrameRef.current?.(id, boxNow);
+    applyCamera(store.get(), false);
+    persist();
+    recull();
+  }, [applyCamera, persist, recull, store]);
+
+  const commitNudgeRef = useRef<(() => void) | null>(null);
+  commitNudgeRef.current = commitNudge;
+
+  const stepHistory = useCallback((direction: 'undo' | 'redo') => {
+    // Flush first, so undoing straight after a nudge undoes that nudge rather
+    // than whatever happened before it.
+    commitNudge();
+    const command = direction === 'undo' ? history.undo() : history.redo();
+    if (!command) return;
+    applyLayout(applyCommand(layoutRef.current, command, direction));
+    // Undo selects and reveals what it changed, which is what tldraw and
+    // Excalidraw both do: an undo you cannot see is indistinguishable from one
+    // that did not happen.
+    const [first] = affectedIds(command);
+    if (first) setSelected(first);
+  }, [applyLayout, commitNudge, history]);
 
   const onDragStart = useCallback((id: string, e: React.PointerEvent) => {
     const box = layoutRef.current[id];
@@ -378,7 +445,7 @@ export function InteractionLab() {
       window.removeEventListener('pointerup', up);
       const d = dragRef.current;
       dragRef.current = null;
-      if (d) commitGesture(d.id, latest);
+      if (d) commitGesture(d.id, d.box, latest);
     };
 
     window.addEventListener('pointermove', move);
@@ -415,7 +482,7 @@ export function InteractionLab() {
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      commitGesture(id, latest);
+      commitGesture(id, start, latest);
     };
 
     window.addEventListener('pointermove', move);
@@ -517,7 +584,10 @@ export function InteractionLab() {
         return { x: r.width / 2, y: r.height / 2 };
       };
 
-      if (e.shiftKey && e.code === 'Digit1') { e.preventDefault(); fitAll(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        stepHistory(e.shiftKey ? 'redo' : 'undo');
+      } else if (e.shiftKey && e.code === 'Digit1') { e.preventDefault(); fitAll(); }
       else if (e.shiftKey && e.code === 'Digit2') {
         e.preventDefault();
         const box = selectedRef.current ? layoutRef.current[selectedRef.current] : null;
@@ -550,14 +620,28 @@ export function InteractionLab() {
         if (!box) return;
         const dx = (e.key === 'ArrowRight' ? step : 0) - (e.key === 'ArrowLeft' ? step : 0);
         const dy = (e.key === 'ArrowDown' ? step : 0) - (e.key === 'ArrowUp' ? step : 0);
-        setLayout((prev) => ({ ...prev, [id]: { ...box, x: box.x + dx, y: box.y + dy } }));
+        // Nudges do not snap: Figma moves by the exact amount you asked for.
+        const to = { ...box, x: box.x + dx, y: box.y + dy };
+        if (!nudgeRef.current || nudgeRef.current.id !== id) {
+          commitNudge();
+          nudgeRef.current = { id, from: { ...box }, timer: 0 };
+        }
+        const run = nudgeRef.current;
+        clearTimeout(run.timer);
+        run.timer = window.setTimeout(() => commitNudge(), NUDGE_COMMIT_MS);
+        layoutRef.current = { ...layoutRef.current, [id]: to };
+        setLayout({ ...layoutRef.current });
+        paintFrame(id, to);
+        applyCamera(store.get(), false);
+        persist();
       }
     };
 
     // Capture, so a focused screen cannot swallow Escape before the lab sees it.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [activeId, animateTo, exitLock, fitAll, fitTo, lockInto, store]);
+  }, [activeId, animateTo, applyCamera, commitNudge, exitLock, fitAll, fitTo, lockInto,
+      paintFrame, persist, stepHistory, store]);
 
   // Layout changes from the keyboard still have to reach the DOM and storage.
   layoutRef.current = layout;
@@ -645,10 +729,13 @@ export function InteractionLab() {
             type="button"
             className={styles.hudButton}
             onClick={() => {
+              const before = { ...layoutRef.current };
               clearLayout();
               const fresh = resolveLayout(null);
-              layoutRef.current = fresh;
-              setLayout(fresh);
+              commitNudge();
+              const command: Command = { kind: 'layout', from: before, to: fresh };
+              if (!isNoop(command)) history.push(command);
+              applyLayout(fresh);
               fitTo(boxesOf(fresh));
             }}
             title="Put every screen back where the registry says"
