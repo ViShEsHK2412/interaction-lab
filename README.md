@@ -27,11 +27,53 @@ arithmetic and you want to own them.
 - Snapping: edges and centres onto other frames, with red alignment lines, plus
   whole-pixel rounding on any axis the geometry did not claim. `Ctrl`/`Cmd`
   held mid-drag bypasses it
+- Three modes: explore, focus (`double-click`), fill (`Shift F`). `Esc` walks
+  back one at a time, and a screen gets first refusal on it
+- Rulers and guides (`Shift R`) in page units, so they stay glued to the
+  content at every zoom. Frames snap to guides as readily as to each other
+- A pixel grid that fades out rather than turning into a wash
+- Hold `Alt` with one frame selected and hover another for the distances
+  between them, Figma-style
 - `Ctrl/Cmd + Z` undo, `Shift` to redo, one entry per completed gesture. A run
   of arrow nudges collapses into a single step
+- `Ctrl C` tidies every frame into an evenly spaced row
+- `Cmd/Ctrl D` duplicates a screen and `Delete` removes it, both as **real file
+  operations**, with `Ctrl/Cmd Z` restoring a deleted one from `.lab-trash`
 - Camera and layout saved to `localStorage`, with a reset in the HUD. Undo
   lives in `sessionStorage`, so it survives a reload and dies with the tab
 - Frames cull offscreen without unmounting, so screen state survives
+
+## Screens are folders
+
+A folder under `src/screens` with a `screen.ts` in it is a screen. There is no
+list to keep in step:
+
+```ts
+// src/screens/feed/screen.ts
+import type { ScreenManifest } from '../../lab/screen-manifest';
+import { FeedScreen } from './feed-screen';
+
+const manifest: ScreenManifest = {
+  id: 'feed',                       // optional; the folder name otherwise
+  name: 'Feed',
+  width: 1440,
+  height: 900,
+  position: { x: 0, y: 0 },
+  component: FeedScreen,
+};
+
+export default manifest;
+```
+
+That is what lets duplicate and delete be real. `Cmd/Ctrl D` asks the dev
+server to copy the folder and patches the copy's manifest; `Delete` moves it to
+`.lab-trash`; `Ctrl/Cmd Z` moves it back. `Alt` + double-click on a label
+renames it, writing the manifest. Everything is persisted before the request,
+so the reload each one triggers can land whenever it likes.
+
+The plugin is `apply: 'serve'`, so none of it exists in a production build. The
+client treats a failed request as "the file half did not happen", and the
+canvas carries on.
 
 ## The screen contract
 
@@ -67,8 +109,9 @@ rather than remember:
 
 ## Still to build
 
-Undo, rulers and guides, Alt-hover distance measurement, and the dev-server
-file operations that make duplicate and delete real.
+Two-pointer touch pinch is there but lightly tested. Alt-drag to duplicate with
+a ghost, and a toast system for the file operations, are the two pieces of the
+original prompt not built here.
 
 ## Development
 

@@ -16,6 +16,7 @@ import {
   guideUnder, loadGuides, ruleAt, saveGuides, type Guide,
 } from './core/rulers';
 import { paintMeasurements } from './core/measurements';
+import { copyName, labFs } from './core/lab-fs';
 import { ScreenFrame } from './core/screen-frame';
 import {
   distributeRow, resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
@@ -913,6 +914,38 @@ export function InteractionLab() {
         return { x: r.width / 2, y: r.height / 2 };
       };
 
+      // Duplicate, delete and undo-delete are file operations, so they end in
+      // a reload: the registry is discovered from the folders on disk, and the
+      // only honest way to show the new one is to read them again. Everything
+      // is persisted before the request, so the reload can land whenever.
+      if ((e.metaKey || e.ctrlKey) && e.code === 'KeyD' && selectedRef.current) {
+        e.preventDefault();
+        const def = SCREENS.find((sc) => sc.id === selectedRef.current);
+        const box = selectedRef.current ? layoutRef.current[selectedRef.current] : null;
+        if (!def || !box) return;
+        const as = copyName(def.dir, SCREENS.map((sc) => sc.dir));
+        saver.saveNow();
+        void labFs.duplicate(def.dir, as, `${def.name} copy`, { x: box.x + 32, y: box.y + 32 })
+          .then((ok) => { if (ok) location.reload(); });
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRef.current) {
+        e.preventDefault();
+        const def = SCREENS.find((sc) => sc.id === selectedRef.current);
+        if (!def) return;
+        saver.saveNow();
+        void labFs.remove(def.dir).then((token) => {
+          if (!token) return;
+          // The token is what undo needs, and it has to survive the reload the
+          // delete triggers, so it goes to sessionStorage before the reload.
+          try {
+            sessionStorage.setItem('interaction-lab:trash:v1',
+              JSON.stringify({ dir: def.dir, token }));
+          } catch { /* disabled */ }
+          location.reload();
+        });
+        return;
+      }
       // Ctrl+C, not Cmd+C: copying is Cmd, and a canvas has nothing to copy.
       if (e.ctrlKey && !e.metaKey && e.code === 'KeyC') {
         e.preventDefault();
@@ -931,6 +964,16 @@ export function InteractionLab() {
         if (!isNoop(command)) history.push(command);
         applyLayout(after);
         fitTo(boxesOf(after));
+        // Write the row back to the manifests, so the files agree with the
+        // canvas rather than drifting from it. Best effort: no dev server, no
+        // write, and the live layout still overrides the defaults anyway.
+        saver.saveNow();
+        const byDir: Record<string, { x: number; y: number }> = {};
+        for (const def of SCREENS) {
+          const at = after[def.id];
+          if (at) byDir[def.dir] = { x: at.x, y: at.y };
+        }
+        void labFs.setPositions(byDir);
         return;
       }
       if (e.shiftKey && e.code === 'KeyR') {
@@ -971,6 +1014,19 @@ export function InteractionLab() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
+        let trashed: { dir: string; token: string } | null = null;
+        try {
+          const raw = sessionStorage.getItem('interaction-lab:trash:v1');
+          trashed = raw ? JSON.parse(raw) : null;
+        } catch { /* disabled */ }
+        // A deleted screen is the biggest thing undo can give back, so it
+        // takes precedence over the layout stack.
+        if (trashed && !e.shiftKey) {
+          try { sessionStorage.removeItem('interaction-lab:trash:v1'); } catch { /* disabled */ }
+          saver.saveNow();
+          void labFs.restore(trashed.dir, trashed.token).then((ok) => { if (ok) location.reload(); });
+          return;
+        }
         stepHistory(e.shiftKey ? 'redo' : 'undo');
       } else if (e.shiftKey && e.code === 'Digit1') { e.preventDefault(); fitAll(); }
       else if (e.shiftKey && e.code === 'Digit2') {
@@ -1031,7 +1087,7 @@ export function InteractionLab() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [activeId, animateTo, applyCamera, applyLayout, commitGuides, commitNudge, enterFill,
       exitFill, exitLock, fitAll, fitTo, history, lockInto, paintFrame, persist,
-      stepHistory, store]);
+      saver, stepHistory, store]);
 
   // Layout changes from the keyboard still have to reach the DOM and storage.
   layoutRef.current = layout;
@@ -1113,7 +1169,15 @@ export function InteractionLab() {
             data-selected={selected === def.id || undefined}
             style={{ transform: 'translate(-9999px, -9999px)' }}
             onPointerDown={(e) => { e.stopPropagation(); setSelected(def.id); }}
-            onDoubleClick={() => lockInto(def.id)}
+            onDoubleClick={(e) => {
+              // Alt turns the label into a rename; a plain double-click is
+              // still lock-in, which is what you want ninety-nine times in a
+              // hundred.
+              if (!e.altKey) { lockInto(def.id); return; }
+              const next = window.prompt('Rename this screen', def.name);
+              if (!next || next === def.name) return;
+              void labFs.rename(def.dir, next).then((ok) => { if (ok) location.reload(); });
+            }}
           >
             {def.name}
           </div>

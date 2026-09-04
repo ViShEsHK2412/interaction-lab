@@ -1,57 +1,56 @@
-import type { ComponentType } from 'react';
-import { PlaygroundScreen } from '../screens/playground/playground-screen';
-import { FeedScreen } from '../screens/feed/feed-screen';
-import { StressScreen } from '../screens/stress/stress-screen';
+import type { ScreenManifest } from './screen-manifest';
 
 /**
- * The registry. Adding a screen is a component plus one entry here, and
- * nothing else.
+ * The registry, discovered rather than declared.
  *
- * A screen is a fixed-size viewport, like a device frame, not a page that
- * grows to fit its content. Content taller than the frame scrolls inside the
- * frame's own scroll container, which is what lets a screen keep any
- * scroll-driven behaviour it has.
+ * A folder under `src/screens` with a `screen.ts` in it *is* a screen. There
+ * is no list to keep in step, which is what lets the lab's duplicate and
+ * delete be real file operations: copying a folder adds a screen, and the
+ * canvas finds it on the next reload.
  */
-export interface ScreenDef {
+export interface ScreenDef extends Required<Omit<ScreenManifest, 'id'>> {
   id: string;
-  /** Shown on the frame label. */
-  name: string;
-  /** Frame size in page units, which are canvas units at zoom 1. */
-  width: number;
-  height: number;
-  /** Top-left, page units. The saved layout overrides this. */
+  /** The folder, which is what file operations target. */
+  dir: string;
   defaultPosition: { x: number; y: number };
-  component: ComponentType;
 }
 
-/**
- * Keep widths at 1000 or more if a screen branches on width: a frame is its
- * own viewport, so a 400px frame really is a 400px viewport to the screen
- * inside it, and it will render its mobile layout.
- */
-export const SCREENS: ScreenDef[] = [
-  {
-    id: 'feed',
-    name: 'Feed',
-    width: 1440,
-    height: 900,
-    defaultPosition: { x: 0, y: 0 },
-    component: FeedScreen,
-  },
-  {
-    id: 'playground',
-    name: 'Playground',
-    width: 1440,
-    height: 900,
-    defaultPosition: { x: 1640, y: 0 },
-    component: PlaygroundScreen,
-  },
-  {
-    id: 'stress',
-    name: 'The hard cases',
-    width: 1440,
-    height: 900,
-    defaultPosition: { x: 3280, y: 0 },
-    component: StressScreen,
-  },
-];
+const modules = import.meta.glob<{ default: ScreenManifest }>(
+  '../screens/*/screen.ts',
+  { eager: true },
+);
+
+function build(): ScreenDef[] {
+  const out: ScreenDef[] = [];
+  const seen = new Set<string>();
+
+  for (const [path, mod] of Object.entries(modules)) {
+    const dir = path.split('/').at(-2);
+    const manifest = mod?.default;
+    if (!dir || !manifest) continue;
+
+    const id = manifest.id ?? dir;
+    // Two screens claiming one id is a real possibility after a duplicate that
+    // did not finish patching, and the canvas cannot tell them apart. Fall
+    // back to the folder, which is unique by construction.
+    const unique = seen.has(id) ? dir : id;
+    if (seen.has(unique)) continue;
+    seen.add(unique);
+
+    out.push({
+      id: unique,
+      dir,
+      name: manifest.name,
+      width: manifest.width,
+      height: manifest.height,
+      position: manifest.position,
+      defaultPosition: manifest.position,
+      component: manifest.component,
+    });
+  }
+
+  // Stable order, so the canvas and the Tab cycle do not reshuffle per reload.
+  return out.sort((a, b) => a.dir.localeCompare(b.dir));
+}
+
+export const SCREENS: ScreenDef[] = build();
