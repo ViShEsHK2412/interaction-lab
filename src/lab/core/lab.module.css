@@ -339,3 +339,44 @@
 }
 
 .toast[data-tone='warn'] { background: #f24822; }
+
+/*
+ * The duplicate ghost. In the layer, so it scales with the canvas: it stands
+ * for a frame, and a preview that did not scale would lie about the size of
+ * the thing being placed.
+ */
+.ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: calc(1.5px * var(--inv-zoom, 1)) dashed #0d99ff;
+  border-radius: 8px;
+  background: rgb(13 153 255 / 0.06);
+  pointer-events: none;
+}
+
+/*
+ * The play button, pinned above the focused frame's top-right corner. Chrome,
+ * so it is placed by the camera write rather than living in the layer, and it
+ * stays the same size at every zoom.
+ */
+.play {
+  position: absolute;
+  transform-origin: 100% 100%;
+  margin: -26px 0 0 -22px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: #0d99ff;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.play:hover { background: #0b86e0; }

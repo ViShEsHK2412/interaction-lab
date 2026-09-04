@@ -119,6 +119,7 @@ export function InteractionLab() {
   layoutRef.current = layout;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const activeIdRef = useRef<string | null>(null);
 
   /**
    * Setters that update their ref in the same breath.
@@ -137,6 +138,11 @@ export function InteractionLab() {
   const select = useCallback((next: string | null) => {
     selectedRef.current = next;
     setSelected(next);
+  }, []);
+
+  const goActive = useCallback((next: string | null) => {
+    activeIdRef.current = next;
+    setActiveId(next);
   }, []);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -320,6 +326,27 @@ export function InteractionLab() {
   const paintRulerRef = useRef<(() => void) | null>(null);
   paintRulerRef.current = paintRulerLayer;
 
+  /**
+   * The duplicate ghost. Alt-dragging leaves the original where it is and
+   * tracks a dashed outline under the pointer; dropping it copies the folder
+   * and places the copy exactly there.
+   *
+   * In the layer rather than in screen-space chrome, because it stands for a
+   * frame: it has to scale with the canvas the way the frame it will become
+   * does, or the preview lies about the size of the thing you are placing.
+   */
+  const ghostRef = useRef<HTMLDivElement | null>(null);
+
+  const showGhost = useCallback((box: Box | null) => {
+    const el = ghostRef.current;
+    if (!el) return;
+    if (!box) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.style.transform = `translate(${box.x}px, ${box.y}px)`;
+    el.style.width = `${box.width}px`;
+    el.style.height = `${box.height}px`;
+  }, []);
+
   const snapLayerRef = useRef<HTMLDivElement | null>(null);
   const badgeRef = useRef<HTMLDivElement | null>(null);
 
@@ -411,6 +438,16 @@ export function InteractionLab() {
       const x = (box.x + camera.x) * camera.z;
       const y = (box.y + camera.y) * camera.z;
       el.style.transform = `translate(${toDomPrecision(x)}px, ${toDomPrecision(y)}px)`;
+    }
+
+    // Right-aligned to the frame, which means its position depends on the
+    // frame's width *on screen*, not in page units.
+    const play = playRef.current;
+    const focused = activeIdRef.current ? layoutRef.current[activeIdRef.current] : null;
+    if (play && focused) {
+      const x = (focused.x + focused.width + camera.x) * camera.z;
+      const y = (focused.y + camera.y) * camera.z;
+      play.style.transform = `translate(${toDomPrecision(x)}px, ${toDomPrecision(y)}px)`;
     }
   }, []);
 
@@ -507,7 +544,7 @@ export function InteractionLab() {
     // screens while locked in cannot corrupt the view Escape returns to.
     if (modeRef.current === 'explore') exploreCameraRef.current = store.get();
     select(id);
-    setActiveId(id);
+    goActive(id);
     goMode('focus');
     animateTo(zoomToBounds(box, viewport(), 0));
   }, [animateTo, store, viewport]);
@@ -517,7 +554,7 @@ export function InteractionLab() {
     // finished travelling. Interaction is cut off at the moment you asked, not
     // when the animation happens to end.
     goMode('explore');
-    setActiveId(null);
+    goActive(null);
     focusCameraRef.current = null;
     const back = exploreCameraRef.current;
     exploreCameraRef.current = null;
@@ -540,7 +577,7 @@ export function InteractionLab() {
     if (modeRef.current === 'focus') focusCameraRef.current = store.get();
     else if (modeRef.current === 'explore') exploreCameraRef.current = store.get();
     select(id);
-    setActiveId(id);
+    goActive(id);
     goMode('fill');
     setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     store.set({ x: -box.x, y: -box.y, z: 1 });
@@ -695,6 +732,19 @@ export function InteractionLab() {
   const commitNudgeRef = useRef<(() => void) | null>(null);
   commitNudgeRef.current = commitNudge;
 
+  /** Registry positions, as one undoable command. Shared by the HUD and the key. */
+  const resetLayout = useCallback(() => {
+    commitNudge();
+    const before = { ...layoutRef.current };
+    clearLayout();
+    const fresh = resolveLayout(null);
+    const command: Command = { kind: 'layout', from: before, to: fresh };
+    if (!isNoop(command)) history.push(command);
+    applyLayout(fresh);
+    fitTo(boxesOf(fresh));
+    toast('Layout reset');
+  }, [applyLayout, commitNudge, fitTo, history]);
+
   const stepHistory = useCallback((direction: 'undo' | 'redo') => {
     // Flush first, so undoing straight after a nudge undoes that nudge rather
     // than whatever happened before it.
@@ -713,6 +763,9 @@ export function InteractionLab() {
     const box = layoutRef.current[id];
     if (!box || modeRef.current !== 'explore') return;
     e.stopPropagation();
+    // Alt held at the start means duplicate, and it is decided once: picking
+    // it up mid-drag would change what the gesture means halfway through.
+    const duplicating = e.altKey;
     // Capture is an optimisation, not a requirement: the move and up listeners
     // are on the window, so the gesture works without it. It throws for a
     // pointer that is no longer down, and letting that abort the handler would
@@ -744,8 +797,13 @@ export function InteractionLab() {
         ev.ctrlKey || ev.metaKey,
       );
       latest = { ...wanted, x: snapped.x, y: snapped.y };
-      layoutRef.current = { ...layoutRef.current, [d.id]: latest };
-      paintFrame(d.id, latest);
+      if (duplicating) {
+        // The original does not move. Only the ghost follows.
+        showGhost(latest);
+      } else {
+        layoutRef.current = { ...layoutRef.current, [d.id]: latest };
+        paintFrame(d.id, latest);
+      }
       drawSnapLines(snapped.lines);
       applyCamera(store.get(), false);
     };
@@ -755,12 +813,26 @@ export function InteractionLab() {
       window.removeEventListener('pointerup', up);
       const d = dragRef.current;
       dragRef.current = null;
-      if (d) commitGesture(d.id, d.box, latest);
+      if (!d) return;
+      if (!duplicating) { commitGesture(d.id, d.box, latest); return; }
+
+      showGhost(null);
+      clearSnapLines();
+      const def = SCREENS.find((sc) => sc.id === d.id);
+      if (!def) return;
+      const as = copyName(def.dir, SCREENS.map((sc) => sc.dir));
+      saver.saveNow();
+      void labFs.duplicate(def.dir, as, `${def.name} copy`, { x: latest.x, y: latest.y })
+        .then((ok) => {
+          if (!ok) { toast('Could not duplicate: no dev server', 'warn'); return; }
+          toastAfterReload(`Duplicated as ${as}`);
+          location.reload();
+        });
     };
 
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-  }, [applyCamera, commitGesture, drawSnapLines, paintFrame, store]);
+  }, [applyCamera, clearSnapLines, commitGesture, drawSnapLines, paintFrame, saver, showGhost, store]);
 
   /**
    * Resizing is the same shape as dragging with one difference: only the
@@ -842,6 +914,13 @@ export function InteractionLab() {
     });
 
     drainPendingToast();
+    // Once, ever. A hint that comes back every session is not a hint.
+    try {
+      if (!localStorage.getItem('interaction-lab:seen:v1')) {
+        localStorage.setItem('interaction-lab:seen:v1', '1');
+        toast('Double-click a screen to use it');
+      }
+    } catch { /* storage disabled; a hint is not worth an exception */ }
     const onPageHide = () => saver.saveNow();
     window.addEventListener('pagehide', onPageHide);
 
@@ -904,6 +983,16 @@ export function InteractionLab() {
       markMoved();
     });
   }, [applyCamera, markMoved, recull, schedule, store]);
+
+  /**
+   * The play button, pinned above the focused frame's top-right corner.
+   *
+   * Screen-space chrome like the labels, and placed by the same camera write,
+   * because anything inside the transformed layer is part of its raster and
+   * visibly stretches mid-zoom. It is sized to the frame's width on screen so
+   * it right-aligns however far the canvas is zoomed.
+   */
+  const playRef = useRef<HTMLButtonElement | null>(null);
 
   const labelCallback = useCallback((id: string) => (el: HTMLElement | null) => {
     if (!el) { labelsRef.current.delete(id); return; }
@@ -985,7 +1074,16 @@ export function InteractionLab() {
           });
         return;
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRef.current) {
+      // Ahead of delete, and delete refuses the modifiers below, because the
+      // two shortcuts share a key: Ctrl+Shift+Backspace matched delete first
+      // and removed a screen when it was asked to reset the layout.
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Backspace') {
+        e.preventDefault();
+        resetLayout();
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace')
+          && !e.ctrlKey && !e.metaKey && !e.shiftKey && selectedRef.current) {
         e.preventDefault();
         const def = SCREENS.find((sc) => sc.id === selectedRef.current);
         if (!def) return;
@@ -1152,7 +1250,7 @@ export function InteractionLab() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [activeId, animateTo, applyCamera, applyLayout, commitGuides, commitNudge, enterFill,
       exitFill, exitLock, fitAll, fitTo, history, lockInto, paintFrame, persist,
-      saver, stepHistory, store]);
+      resetLayout, saver, stepHistory, store]);
 
   // Layout changes from the keyboard still have to reach the DOM and storage.
   layoutRef.current = layout;
@@ -1201,6 +1299,8 @@ export function InteractionLab() {
         data-canvas-background=""
         onPointerDown={() => { if (mode === 'focus') exitLock(); }}
       >
+        <div className={styles.ghost} ref={ghostRef} style={{ display: 'none' }} />
+
         {SCREENS.map((def) => {
           const box = layout[def.id];
           if (!box) return null;
@@ -1252,12 +1352,15 @@ export function InteractionLab() {
             data-screen-id={def.id}
             data-selected={selected === def.id || undefined}
             style={{ transform: 'translate(-9999px, -9999px)' }}
-            onPointerDown={(e) => { e.stopPropagation(); select(def.id); }}
-            onDoubleClick={(e) => {
-              // Alt turns the label into a rename; a plain double-click is
-              // still lock-in, which is what you want ninety-nine times in a
-              // hundred.
-              if (!e.altKey) { lockInto(def.id); return; }
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              select(def.id);
+              // A label is a handle on its frame: dragging it moves the frame,
+              // which is how you grab a screen that fills the viewport and has
+              // no free edge to catch.
+              onDragStart(def.id, e);
+            }}
+            onDoubleClick={() => {
               const next = window.prompt('Rename this screen', def.name);
               if (!next || next === def.name) return;
               void labFs.rename(def.dir, next).then((ok) => {
@@ -1269,6 +1372,21 @@ export function InteractionLab() {
             {def.name}
           </div>
         ))}
+
+        {mode !== 'explore' && (
+          <button
+            type="button"
+            className={styles.play}
+            ref={playRef}
+            data-screen-id={activeId ?? undefined}
+            title={mode === 'fill'
+              ? 'Back to the frame (Shift F)'
+              : 'Give this screen the whole window (Shift F)'}
+            onClick={() => (mode === 'fill' ? exitFill() : activeId && enterFill(activeId))}
+          >
+            {mode === 'fill' ? '■' : '▶'}
+          </button>
+        )}
 
         <div className={styles.hud}>
           <button
@@ -1286,14 +1404,7 @@ export function InteractionLab() {
                 <b>{activeName}</b>
                 {mode === 'fill' ? ' · filling · Esc for the frame' : ' · Esc to exit'}
               </span>
-              <button
-                type="button"
-                className={styles.hudButton}
-                onClick={() => (mode === 'fill' ? exitFill() : activeId && enterFill(activeId))}
-                title="Give this screen the whole window (Shift F)"
-              >
-                {mode === 'fill' ? 'Frame' : 'Fill'}
-              </button>
+
             </>
           )}
           <span className={styles.hudDivider} />
@@ -1336,16 +1447,7 @@ export function InteractionLab() {
           <button
             type="button"
             className={styles.hudButton}
-            onClick={() => {
-              const before = { ...layoutRef.current };
-              clearLayout();
-              const fresh = resolveLayout(null);
-              commitNudge();
-              const command: Command = { kind: 'layout', from: before, to: fresh };
-              if (!isNoop(command)) history.push(command);
-              applyLayout(fresh);
-              fitTo(boxesOf(fresh));
-            }}
+            onClick={resetLayout}
             title="Put every screen back where the registry says"
           >
             Reset
