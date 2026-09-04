@@ -53,14 +53,18 @@ async function readBody(req: { on(ev: string, cb: (c?: unknown) => void): void }
  * be a dependency and a build step for no gain.
  */
 function patchField(source: string, field: string, value: string): string {
-  const pattern = new RegExp(`(${field}\\s*:\\s*)(['"\`])(?:\\\\.|(?!\\2).)*\\2`);
+  // Anchored to the start of a line, so it matches the object property and not
+  // the same word inside the doc comment above it. Unanchored, a `name:` in a
+  // sentence would be rewritten instead of the field, and the manifest would
+  // still parse, which is the worst kind of wrong.
+  const pattern = new RegExp(`^(\\s*${field}\\s*:\\s*)(['"\`])(?:\\\\.|(?!\\2).)*\\2`, 'm');
   if (!pattern.test(source)) return source;
   return source.replace(pattern, `$1'${value.replace(/'/g, "\\'")}'`);
 }
 
 function patchPosition(source: string, x: number, y: number): string {
   return source.replace(
-    /(position\s*:\s*\{)[^}]*\}/,
+    /^(\s*position\s*:\s*\{)[^}]*\}/m,
     `$1 x: ${Math.round(x)}, y: ${Math.round(y)} }`,
   );
 }

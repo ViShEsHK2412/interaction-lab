@@ -312,3 +312,27 @@
   opacity: 0;
   cursor: pointer;
 }
+
+/* Above the HUD, since a toast is a reply to something you just did. */
+.toasts {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 7px 14px;
+  border-radius: 7px;
+  background: #1c1c1c;
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.24);
+}
+
+.toast[data-tone='warn'] { background: #f24822; }

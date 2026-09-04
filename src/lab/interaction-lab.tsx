@@ -17,6 +17,7 @@ import {
 } from './core/rulers';
 import { paintMeasurements } from './core/measurements';
 import { copyName, labFs } from './core/lab-fs';
+import { drainPendingToast, toast, toastAfterReload, Toasts } from './core/lab-toasts';
 import { ScreenFrame } from './core/screen-frame';
 import {
   distributeRow, resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
@@ -209,8 +210,25 @@ export function InteractionLab() {
 
   const gridRef = useRef<HTMLCanvasElement | null>(null);
   const [canvasColour, setCanvasColour] = useState<string>(() => {
-    try { return localStorage.getItem(CANVAS_KEY) || '#f1f1f1'; } catch { return '#f1f1f1'; }
+    // Validated, because a stored value that is not a colour makes --canvas
+    // resolve to nothing and the canvas goes transparent.
+    try {
+      const stored = localStorage.getItem(CANVAS_KEY);
+      return stored && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(stored) ? stored : '#f1f1f1';
+    } catch { return '#f1f1f1'; }
   });
+
+  /**
+   * The window's size, tracked only while a screen is filling.
+   *
+   * Fill is the one mode where a resize means anything: explore and focus
+   * frames have fixed page-space sizes, so opening devtools cannot reflow
+   * them. Without this the filled screen kept whatever size the window had
+   * when fill started, which is precisely the case fill exists to test.
+   */
+  const [windowSize, setWindowSize] = useState(
+    () => ({ width: window.innerWidth, height: window.innerHeight }),
+  );
   const [showGrid, setShowGrid] = useState(true);
   const showGridRef = useRef(showGrid);
   showGridRef.current = showGrid;
@@ -505,6 +523,7 @@ export function InteractionLab() {
     setSelected(id);
     setActiveId(id);
     setMode('fill');
+    setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     store.set({ x: -box.x, y: -box.y, z: 1 });
   }, [store]);
 
@@ -769,6 +788,10 @@ export function InteractionLab() {
 
     const measure = () => {
       rectRef.current = el.getBoundingClientRect();
+      // Only in fill: everywhere else a render here would be for nothing.
+      if (modeRef.current === 'fill') {
+        setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+      }
       recull();                      // now with a real rect, unlike at mount
       paintGrid();
       paintRulerLayer();
@@ -796,6 +819,7 @@ export function InteractionLab() {
       },
     });
 
+    drainPendingToast();
     const onPageHide = () => saver.saveNow();
     window.addEventListener('pagehide', onPageHide);
 
@@ -926,7 +950,11 @@ export function InteractionLab() {
         const as = copyName(def.dir, SCREENS.map((sc) => sc.dir));
         saver.saveNow();
         void labFs.duplicate(def.dir, as, `${def.name} copy`, { x: box.x + 32, y: box.y + 32 })
-          .then((ok) => { if (ok) location.reload(); });
+          .then((ok) => {
+            if (!ok) { toast('Could not duplicate: no dev server', 'warn'); return; }
+            toastAfterReload(`Duplicated as ${as}`);
+            location.reload();
+          });
         return;
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRef.current) {
@@ -935,13 +963,14 @@ export function InteractionLab() {
         if (!def) return;
         saver.saveNow();
         void labFs.remove(def.dir).then((token) => {
-          if (!token) return;
+          if (!token) { toast('Could not delete: no dev server', 'warn'); return; }
           // The token is what undo needs, and it has to survive the reload the
           // delete triggers, so it goes to sessionStorage before the reload.
           try {
             sessionStorage.setItem('interaction-lab:trash:v1',
               JSON.stringify({ dir: def.dir, token }));
           } catch { /* disabled */ }
+          toastAfterReload(`Deleted ${def.name}. Ctrl+Z to put it back`);
           location.reload();
         });
         return;
@@ -974,6 +1003,7 @@ export function InteractionLab() {
           if (at) byDir[def.dir] = { x: at.x, y: at.y };
         }
         void labFs.setPositions(byDir);
+        toast('Tidied into a row');
         return;
       }
       if (e.shiftKey && e.code === 'KeyR') {
@@ -1024,7 +1054,14 @@ export function InteractionLab() {
         if (trashed && !e.shiftKey) {
           try { sessionStorage.removeItem('interaction-lab:trash:v1'); } catch { /* disabled */ }
           saver.saveNow();
-          void labFs.restore(trashed.dir, trashed.token).then((ok) => { if (ok) location.reload(); });
+          void labFs.restore(trashed.dir, trashed.token).then((ok) => {
+            // The VS Code rule: a failed inverse means the target changed on
+            // disk outside the lab. Drop the entry and say so, rather than
+            // leaving a Ctrl+Z that does nothing forever.
+            if (!ok) { toast('Skipped: that screen changed on disk', 'warn'); return; }
+            toastAfterReload('Restored');
+            location.reload();
+          });
           return;
         }
         stepHistory(e.shiftKey ? 'redo' : 'undo');
@@ -1123,9 +1160,7 @@ export function InteractionLab() {
           // is untouched, so leaving fill restores the real size with nothing
           // to undo.
           const filling = mode === 'fill' && activeId === def.id;
-          const size = filling
-            ? { width: window.innerWidth, height: window.innerHeight }
-            : { width: box.width, height: box.height };
+          const size = filling ? windowSize : { width: box.width, height: box.height };
           return (
             <ScreenFrame
               key={def.id}
@@ -1157,6 +1192,7 @@ export function InteractionLab() {
       />
 
       <div className={styles.chrome} ref={chromeRef}>
+        <Toasts />
         <div ref={snapLayerRef} />
         <div className={styles.sizeBadge} ref={badgeRef} style={{ display: 'none' }} />
 
@@ -1176,7 +1212,10 @@ export function InteractionLab() {
               if (!e.altKey) { lockInto(def.id); return; }
               const next = window.prompt('Rename this screen', def.name);
               if (!next || next === def.name) return;
-              void labFs.rename(def.dir, next).then((ok) => { if (ok) location.reload(); });
+              void labFs.rename(def.dir, next).then((ok) => {
+                if (!ok) { toast('Could not rename: no dev server', 'warn'); return; }
+                location.reload();
+              });
             }}
           >
             {def.name}
