@@ -15,6 +15,7 @@ import {
 import {
   guideUnder, loadGuides, ruleAt, saveGuides, type Guide,
 } from './core/rulers';
+import { paintMeasurements } from './core/measurements';
 import { ScreenFrame } from './core/screen-frame';
 import {
   resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
@@ -158,6 +159,48 @@ export function InteractionLab() {
   const nextGuideId = useRef(bootGuides.length + 1);
   const activeGuideRef = useRef<number | null>(null);
   const [, bumpGuides] = useState(0);
+
+  /**
+   * Alt-hover measurement, entirely on refs.
+   *
+   * Zero React renders while measuring: one window pointermove resolves the
+   * hovered frame, and the canvas repaints from the camera subscription. A
+   * measurement that re-rendered on every pointer move would be the one piece
+   * of chrome undoing what the rest of the design is careful about.
+   */
+  const measureRef = useRef<HTMLCanvasElement | null>(null);
+  const altRef = useRef(false);
+  const hoveredRef = useRef<string | null>(null);
+
+  const paintMeasureLayer = useCallback(() => {
+    const canvas = measureRef.current;
+    if (!canvas) return;
+    const r = rectRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const want = { w: Math.round(r.width * dpr), h: Math.round(r.height * dpr) };
+    if (canvas.width !== want.w || canvas.height !== want.h) {
+      canvas.width = want.w;
+      canvas.height = want.h;
+      canvas.style.width = `${r.width}px`;
+      canvas.style.height = `${r.height}px`;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const sel = selectedRef.current ? layoutRef.current[selectedRef.current] : null;
+    const hov = hoveredRef.current ? layoutRef.current[hoveredRef.current] : null;
+    // The fast path: with Alt up there is nothing to draw, and this runs on
+    // every camera write.
+    if (!altRef.current || !sel || !hov || hoveredRef.current === selectedRef.current
+        || modeRef.current !== 'explore') {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    paintMeasurements(ctx, store.get(), { width: r.width, height: r.height }, sel, hov);
+  }, [store]);
+
+  const paintMeasureRef = useRef<(() => void) | null>(null);
+  paintMeasureRef.current = paintMeasureLayer;
 
   const gridRef = useRef<HTMLCanvasElement | null>(null);
   const [showGrid, setShowGrid] = useState(true);
@@ -313,6 +356,7 @@ export function InteractionLab() {
     layer.style.setProperty('--inv-zoom', String(toDomPrecision(1 / camera.z)));
     paintGridRef.current?.();
     paintRulerRef.current?.();
+    paintMeasureRef.current?.();
 
     // Chrome is placed, not scaled: it lives outside the transformed layer, so
     // it never stretches mid-gesture the way anything inside the layer does.
@@ -720,6 +764,7 @@ export function InteractionLab() {
       recull();                      // now with a real rect, unlike at mount
       paintGrid();
       paintRulerLayer();
+      paintMeasureLayer();
     };
     measure();
 
@@ -746,13 +791,52 @@ export function InteractionLab() {
     const onPageHide = () => saver.saveNow();
     window.addEventListener('pagehide', onPageHide);
 
+    /**
+     * Alt-hover measurement. One capture-phase pointermove for the whole
+     * canvas, resolving the frame under the pointer by closest(), and nothing
+     * renders.
+     */
+    const onHover = (ev: PointerEvent) => {
+      // Buttons down means a drag is in progress. Measurements must not fight
+      // a gesture, and Alt is shared with the duplicate-drag.
+      if (ev.buttons !== 0) {
+        if (hoveredRef.current !== null) { hoveredRef.current = null; paintMeasureRef.current?.(); }
+        return;
+      }
+      const target = (ev.target as HTMLElement | null)?.closest?.('[data-screen-id]');
+      const id = target instanceof HTMLElement ? target.dataset['screenId'] ?? null : null;
+      if (id === hoveredRef.current) return;
+      hoveredRef.current = id;
+      if (altRef.current) paintMeasureRef.current?.();
+    };
+
+    const onAlt = (ev: KeyboardEvent) => {
+      const down = ev.type === 'keydown' && ev.altKey;
+      if (down === altRef.current) return;
+      altRef.current = down;
+      paintMeasureRef.current?.();
+    };
+
+    // Blur too: alt-tabbing away with Alt held would otherwise leave the
+    // measurement stuck on screen with nothing driving it.
+    const onBlur = () => { altRef.current = false; paintMeasureRef.current?.(); };
+
+    window.addEventListener('pointermove', onHover, true);
+    window.addEventListener('keydown', onAlt);
+    window.addEventListener('keyup', onAlt);
+    window.addEventListener('blur', onBlur);
+
     return () => {
       ro.disconnect();
       unbind();
       window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pointermove', onHover, true);
+      window.removeEventListener('keydown', onAlt);
+      window.removeEventListener('keyup', onAlt);
+      window.removeEventListener('blur', onBlur);
       saver.saveNow();
     };
-  }, [markMoved, paintGrid, paintRulerLayer, recull, saver, store, viewport]);
+  }, [markMoved, paintGrid, paintMeasureLayer, paintRulerLayer, recull, saver, store, viewport]);
 
   const layerCallback = useCallback((el: HTMLDivElement | null) => {
     layerRef.current = el;
@@ -934,6 +1018,7 @@ export function InteractionLab() {
   return (
     <div className={styles.root} ref={rootCallback} data-mode={mode}>
       <canvas className={styles.grid} ref={gridRef} aria-hidden="true" />
+      <canvas className={styles.measure} ref={measureRef} aria-hidden="true" />
       <div ref={keysCallback} hidden />
 
       <div

@@ -278,3 +278,12 @@
 }
 
 .rulers[data-on] { pointer-events: auto; }
+
+/* Measurements sit above the frames and below the rulers, and never take a
+   pointer event: they are a readout, not a control. */
+.measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
