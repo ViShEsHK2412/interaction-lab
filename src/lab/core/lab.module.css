@@ -264,3 +264,17 @@
 }
 
 .hudButton[data-on] { background: rgb(255 255 255 / 0.18); }
+
+/*
+ * The rulers sit above the frames, and only take pointer events when they are
+ * showing. A full-viewport canvas that swallowed clicks while hidden would
+ * make the whole canvas unusable.
+ */
+.rulers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.rulers[data-on] { pointer-events: auto; }

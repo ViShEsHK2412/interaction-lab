@@ -8,6 +8,13 @@ import { bindCanvasInput, transformFor } from './core/use-canvas-input';
 import { clearLayout, createSaver, loadLayout, type StoredLayout } from './core/persistence';
 import { affectedIds, applyCommand, createHistory, isNoop, type Command } from './core/history';
 import { isLight, paintPixelGrid, parseColour } from './core/pixel-grid';
+import {
+  beginRulerPass, DARK_RULER, LIGHT_RULER, paintGuideLabels, paintGuides, paintRulers,
+  type Band,
+} from './core/canvas-rulers';
+import {
+  guideUnder, loadGuides, ruleAt, saveGuides, type Guide,
+} from './core/rulers';
 import { ScreenFrame } from './core/screen-frame';
 import {
   resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
@@ -77,10 +84,12 @@ export function InteractionLab() {
    * canvas size and there is nothing to wait for. Waiting would paint one
    * frame at a default camera first, and that flash is very visible.
    */
+  let bootGuides: Guide[] = [];
   const boot = useRef<{ stored: StoredLayout | null; layout: Layout; camera: Camera } | null>(null);
   if (!boot.current) {
     const stored = loadLayout(ids);
     const layout = resolveLayout(stored);
+    bootGuides = loadGuides();
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const bounds = boundsOf(boxesOf(layout));
     boot.current = {
@@ -134,6 +143,22 @@ export function InteractionLab() {
    * and it goes away entirely in fill mode, where the canvas is not the thing
    * you are looking at.
    */
+  /**
+   * Rulers and guides, on their own canvas above the frames.
+   *
+   * A canvas rather than DOM because a rule at 100% on a wide screen is a
+   * couple of hundred ticks, and repositioning two hundred divs per camera
+   * write is exactly the churn the rest of this design avoids.
+   */
+  const rulerRef = useRef<HTMLCanvasElement | null>(null);
+  const [showRulers, setShowRulers] = useState(false);
+  const showRulersRef = useRef(showRulers);
+  showRulersRef.current = showRulers;
+  const guidesRef = useRef<Guide[]>(bootGuides);
+  const nextGuideId = useRef(bootGuides.length + 1);
+  const activeGuideRef = useRef<number | null>(null);
+  const [, bumpGuides] = useState(0);
+
   const gridRef = useRef<HTMLCanvasElement | null>(null);
   const [showGrid, setShowGrid] = useState(true);
   const showGridRef = useRef(showGrid);
@@ -167,6 +192,45 @@ export function InteractionLab() {
 
   const paintGridRef = useRef<(() => void) | null>(null);
   paintGridRef.current = paintGrid;
+
+  const paintRulerLayer = useCallback(() => {
+    const canvas = rulerRef.current;
+    if (!canvas) return;
+    const r = rectRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const want = { w: Math.round(r.width * dpr), h: Math.round(r.height * dpr) };
+    if (canvas.width !== want.w || canvas.height !== want.h) {
+      canvas.width = want.w;
+      canvas.height = want.h;
+      canvas.style.width = `${r.width}px`;
+      canvas.style.height = `${r.height}px`;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    // Hidden rather than unmounted in fill mode: the guides are still there,
+    // there is just nothing on screen they relate to.
+    if (!showRulersRef.current || modeRef.current === 'fill') {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    const bg = parseColour(getComputedStyle(canvas).getPropertyValue('--canvas') || '#f1f1f1');
+    const colours = bg && !isLight(bg) ? DARK_RULER : LIGHT_RULER;
+    const size = { width: r.width, height: r.height };
+    const sel = selectedRef.current ? layoutRef.current[selectedRef.current] : null;
+    const bands: Band[] = sel
+      ? [{ x: [sel.x, sel.x + sel.width], y: [sel.y, sel.y + sel.height] }]
+      : [];
+    // Three passes, in this order: the guide lines pass under the gutters, the
+    // gutters paint over them, and the guide labels sit on top of the gutters.
+    beginRulerPass(ctx, size);
+    paintGuides(ctx, store.get(), size, guidesRef.current, colours, activeGuideRef.current);
+    paintRulers(ctx, store.get(), size, colours, bands);
+    paintGuideLabels(ctx, store.get(), guidesRef.current, colours);
+  }, [store]);
+
+  const paintRulerRef = useRef<(() => void) | null>(null);
+  paintRulerRef.current = paintRulerLayer;
 
   const snapLayerRef = useRef<HTMLDivElement | null>(null);
   const badgeRef = useRef<HTMLDivElement | null>(null);
@@ -248,6 +312,7 @@ export function InteractionLab() {
     layer.style.transform = transformFor(camera);
     layer.style.setProperty('--inv-zoom', String(toDomPrecision(1 / camera.z)));
     paintGridRef.current?.();
+    paintRulerRef.current?.();
 
     // Chrome is placed, not scaled: it lives outside the transformed layer, so
     // it never stretches mid-gesture the way anything inside the layer does.
@@ -400,6 +465,71 @@ export function InteractionLab() {
     else if (box) animateTo(zoomToBounds(box, viewport(), 0));
   }, [activeId, animateTo, viewport]);
 
+  /**
+   * Guide gestures.
+   *
+   * A drag from a rule pulls out a new guide; the axis is implied by which
+   * rule it started from, so there is nothing to choose. A drag on an existing
+   * guide moves it, and dropping one back in a rule throws it away, which is
+   * how every canvas tool does it and needs no explaining.
+   */
+  const commitGuides = useCallback(() => {
+    saveGuides(guidesRef.current);
+    bumpGuides((n) => n + 1);
+    paintRulerRef.current?.();
+  }, []);
+
+  const onRulerPointerDown = useCallback((e: React.PointerEvent) => {
+    if (modeRef.current !== 'explore' || !showRulersRef.current) return;
+    const r = rectRef.current;
+    const at = { x: e.clientX - r.left, y: e.clientY - r.top };
+    const camera = store.get();
+
+    const existing = guideUnder(guidesRef.current, at, camera);
+    const fromRule = ruleAt(at.x, at.y);
+    if (!existing && !fromRule) return;              // a press on the canvas
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    let guide: Guide;
+    if (existing) {
+      guide = existing;
+    } else {
+      guide = { id: nextGuideId.current, axis: fromRule as 'x' | 'y', at: 0 };
+      nextGuideId.current += 1;
+      guidesRef.current = [...guidesRef.current, guide];
+    }
+    activeGuideRef.current = guide.id;
+
+    const place = (ev: PointerEvent) => {
+      const c = store.get();
+      const local = { x: ev.clientX - rectRef.current.left, y: ev.clientY - rectRef.current.top };
+      const page = guide.axis === 'x'
+        ? local.x / c.z - c.x
+        : local.y / c.z - c.y;
+      guide.at = Math.round(page);
+      guidesRef.current = guidesRef.current.map((g) => (g.id === guide.id ? { ...guide } : g));
+      paintRulerRef.current?.();
+    };
+    place(e.nativeEvent);
+
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', place);
+      window.removeEventListener('pointerup', up);
+      const local = { x: ev.clientX - rectRef.current.left, y: ev.clientY - rectRef.current.top };
+      // Dropped back in a rule, or off the canvas entirely: thrown away.
+      if (ruleAt(local.x, local.y) !== null || local.x < 0 || local.y < 0) {
+        guidesRef.current = guidesRef.current.filter((g) => g.id !== guide.id);
+        activeGuideRef.current = null;
+      }
+      commitGuides();
+    };
+
+    window.addEventListener('pointermove', place);
+    window.addEventListener('pointerup', up);
+  }, [commitGuides, store]);
+
   const registerEscape = useCallback((id: string, fn: (() => boolean) | null) => {
     if (fn) escapeRef.current.set(id, fn);
     else escapeRef.current.delete(id);
@@ -513,7 +643,13 @@ export function InteractionLab() {
       // Tolerance is in screen pixels, so it must be divided by zoom: eight
       // pixels of pointer slop is eight pixels whatever the canvas is doing.
       const snapped = snapMovingBox(
-        wanted, othersOf(d.id), { x: [], y: [] },
+        wanted, othersOf(d.id),
+        {
+          // A guide you placed deliberately is at least as strong a target as
+          // another frame's edge, which is what Figma and Penpot both do.
+          x: guidesRef.current.filter((g) => g.axis === 'x').map((g) => g.at),
+          y: guidesRef.current.filter((g) => g.axis === 'y').map((g) => g.at),
+        },
         SNAP_TOLERANCE_PX / z,
         ev.ctrlKey || ev.metaKey,
       );
@@ -583,6 +719,7 @@ export function InteractionLab() {
       rectRef.current = el.getBoundingClientRect();
       recull();                      // now with a real rect, unlike at mount
       paintGrid();
+      paintRulerLayer();
     };
     measure();
 
@@ -615,7 +752,7 @@ export function InteractionLab() {
       window.removeEventListener('pagehide', onPageHide);
       saver.saveNow();
     };
-  }, [markMoved, paintGrid, recull, saver, store, viewport]);
+  }, [markMoved, paintGrid, paintRulerLayer, recull, saver, store, viewport]);
 
   const layerCallback = useCallback((el: HTMLDivElement | null) => {
     layerRef.current = el;
@@ -685,6 +822,42 @@ export function InteractionLab() {
         return { x: r.width / 2, y: r.height / 2 };
       };
 
+      if (e.shiftKey && e.code === 'KeyR') {
+        e.preventDefault();
+        setShowRulers((v) => { showRulersRef.current = !v; return !v; });
+        requestAnimationFrame(() => paintRulerRef.current?.());
+        return;
+      }
+      // The ruler gets first refusal on Delete and the arrows while a guide is
+      // selected, the way Figma layers guide keys over object keys. Without
+      // this the lab would delete the selected SCREEN when you meant the guide.
+      if (showRulersRef.current && activeGuideRef.current !== null) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          guidesRef.current = guidesRef.current.filter((g) => g.id !== activeGuideRef.current);
+          activeGuideRef.current = null;
+          commitGuides();
+          return;
+        }
+        if (e.key.startsWith('Arrow')) {
+          const guide = guidesRef.current.find((g) => g.id === activeGuideRef.current);
+          const wants = e.key === 'ArrowLeft' || e.key === 'ArrowRight' ? 'x' : 'y';
+          if (guide && guide.axis === wants) {
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 1;
+            const delta = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -step : step;
+            guidesRef.current = guidesRef.current.map((g) =>
+              (g.id === guide.id ? { ...g, at: g.at + delta } : g));
+            commitGuides();
+            return;
+          }
+        }
+        if (e.key === 'Escape') {
+          activeGuideRef.current = null;
+          paintRulerRef.current?.();
+          return;
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         stepHistory(e.shiftKey ? 'redo' : 'undo');
@@ -745,8 +918,8 @@ export function InteractionLab() {
     // Capture, so a focused screen cannot swallow Escape before the lab sees it.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [activeId, animateTo, applyCamera, commitNudge, enterFill, exitFill, exitLock, fitAll,
-      fitTo, lockInto, paintFrame, persist, stepHistory, store]);
+  }, [activeId, animateTo, applyCamera, commitGuides, commitNudge, enterFill, exitFill,
+      exitLock, fitAll, fitTo, lockInto, paintFrame, persist, stepHistory, store]);
 
   // Layout changes from the keyboard still have to reach the DOM and storage.
   layoutRef.current = layout;
@@ -800,6 +973,14 @@ export function InteractionLab() {
           );
         })}
       </div>
+
+      <canvas
+        className={styles.rulers}
+        ref={rulerRef}
+        aria-hidden="true"
+        data-on={showRulers && mode !== 'fill' || undefined}
+        onPointerDown={onRulerPointerDown}
+      />
 
       <div className={styles.chrome} ref={chromeRef}>
         <div ref={snapLayerRef} />
@@ -855,6 +1036,18 @@ export function InteractionLab() {
             title="The pixel grid, ten units"
           >
             Grid
+          </button>
+          <button
+            type="button"
+            className={styles.hudButton}
+            data-on={showRulers || undefined}
+            onClick={() => {
+              setShowRulers((v) => { showRulersRef.current = !v; return !v; });
+              requestAnimationFrame(() => paintRulerRef.current?.());
+            }}
+            title="Rulers and guides (Shift R). Drag out of a rule to place one"
+          >
+            Rulers
           </button>
           <button
             type="button"
