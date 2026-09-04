@@ -119,6 +119,25 @@ export function InteractionLab() {
   layoutRef.current = layout;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+
+  /**
+   * Setters that update their ref in the same breath.
+   *
+   * The refs exist so event handlers can read current values without being
+   * rebuilt, and assigning them during render leaves a window where the state
+   * has changed and the ref has not. Two Escapes in one tick both read the old
+   * mode, and the second does nothing: pressing Escape twice quickly in fill
+   * mode landed in focus rather than explore. Key repeat has the same shape.
+   */
+  const goMode = useCallback((next: Mode) => {
+    modeRef.current = next;
+    setMode(next);
+  }, []);
+
+  const select = useCallback((next: string | null) => {
+    selectedRef.current = next;
+    setSelected(next);
+  }, []);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
@@ -487,9 +506,9 @@ export function InteractionLab() {
     // Only snapshot when actually entering from explore, so cycling between
     // screens while locked in cannot corrupt the view Escape returns to.
     if (modeRef.current === 'explore') exploreCameraRef.current = store.get();
-    setSelected(id);
+    select(id);
     setActiveId(id);
-    setMode('focus');
+    goMode('focus');
     animateTo(zoomToBounds(box, viewport(), 0));
   }, [animateTo, store, viewport]);
 
@@ -497,7 +516,7 @@ export function InteractionLab() {
     // The shield comes back with the state change, before the camera has
     // finished travelling. Interaction is cut off at the moment you asked, not
     // when the animation happens to end.
-    setMode('explore');
+    goMode('explore');
     setActiveId(null);
     focusCameraRef.current = null;
     const back = exploreCameraRef.current;
@@ -520,15 +539,15 @@ export function InteractionLab() {
     if (!box) return;
     if (modeRef.current === 'focus') focusCameraRef.current = store.get();
     else if (modeRef.current === 'explore') exploreCameraRef.current = store.get();
-    setSelected(id);
+    select(id);
     setActiveId(id);
-    setMode('fill');
+    goMode('fill');
     setWindowSize({ width: window.innerWidth, height: window.innerHeight });
     store.set({ x: -box.x, y: -box.y, z: 1 });
   }, [store]);
 
   const exitFill = useCallback(() => {
-    setMode('focus');
+    goMode('focus');
     const back = focusCameraRef.current;
     focusCameraRef.current = null;
     const box = activeId ? layoutRef.current[activeId] : null;
@@ -687,7 +706,7 @@ export function InteractionLab() {
     // Excalidraw both do: an undo you cannot see is indistinguishable from one
     // that did not happen.
     const [first] = affectedIds(command);
-    if (first) setSelected(first);
+    if (first) select(first);
   }, [applyLayout, commitNudge, history]);
 
   const onDragStart = useCallback((id: string, e: React.PointerEvent) => {
@@ -1082,7 +1101,7 @@ export function InteractionLab() {
         e.preventDefault();
         lockInto(selectedRef.current);
       } else if (e.key === 'Escape') {
-        setSelected(null);
+        select(null);
       } else if (e.key === '=' || e.key === '+' || e.key === '-') {
         e.preventDefault();
         const p = centre();
@@ -1093,7 +1112,7 @@ export function InteractionLab() {
         const order = SCREENS.map((s) => s.id);
         const at = selectedRef.current ? order.indexOf(selectedRef.current) : -1;
         const next = order[(at + (e.shiftKey ? -1 : 1) + order.length) % order.length];
-        if (next) setSelected(next);
+        if (next) select(next);
       } else if (e.key.startsWith('Arrow') && selectedRef.current) {
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;             // Figma's amounts
@@ -1173,7 +1192,7 @@ export function InteractionLab() {
               visible={!culled[def.id]}
               zoom={zoomLabel / 100}
               readCanvas={readCanvas}
-              onSelect={setSelected}
+              onSelect={select}
               onLockIn={lockInto}
               onDragStart={onDragStart}
               onResizeStart={onResizeStart}
@@ -1204,7 +1223,7 @@ export function InteractionLab() {
             data-screen-id={def.id}
             data-selected={selected === def.id || undefined}
             style={{ transform: 'translate(-9999px, -9999px)' }}
-            onPointerDown={(e) => { e.stopPropagation(); setSelected(def.id); }}
+            onPointerDown={(e) => { e.stopPropagation(); select(def.id); }}
             onDoubleClick={(e) => {
               // Alt turns the label into a rename; a plain double-click is
               // still lock-in, which is what you want ninety-nine times in a
