@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.lab-trash/
+*.local
+.DS_Store
+
+# Working notes, kept out of the repo.
+PLAN.md
+AGENTS.md
+CLAUDE.md
