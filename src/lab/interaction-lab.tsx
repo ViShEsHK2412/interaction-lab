@@ -7,6 +7,7 @@ import {
 import { bindCanvasInput, transformFor } from './core/use-canvas-input';
 import { clearLayout, createSaver, loadLayout, type StoredLayout } from './core/persistence';
 import { affectedIds, applyCommand, createHistory, isNoop, type Command } from './core/history';
+import { isLight, paintPixelGrid, parseColour } from './core/pixel-grid';
 import { ScreenFrame } from './core/screen-frame';
 import {
   resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
@@ -26,7 +27,16 @@ const IDLE_MS = 160;
  */
 const NUDGE_COMMIT_MS = 400;
 
-type Mode = 'explore' | 'focus';
+/**
+ * Three modes, and Escape walks back one at a time.
+ *
+ * `explore` is the canvas. `focus` is locked into one screen with the canvas
+ * still around it. `fill` hands the screen the real window: the frame becomes
+ * the viewport size and the screen reflows at true viewport width, which is
+ * the only way to see how a screen behaves at a width its manifest never
+ * declared.
+ */
+type Mode = 'explore' | 'focus' | 'fill';
 type Layout = Record<string, { x: number; y: number; width: number; height: number }>;
 
 /** Registry defaults with any saved overrides laid on top. */
@@ -105,6 +115,8 @@ export function InteractionLab() {
   const labelsRef = useRef(new Map<string, HTMLElement>());
   const escapeRef = useRef(new Map<string, () => boolean>());
   const exploreCameraRef = useRef<Camera | null>(null);
+  /** The frame's real size, held while fill mode borrows the window's. */
+  const focusCameraRef = useRef<Camera | null>(null);
   const animRef = useRef<number>(0);
   const frameRef = useRef<number>(0);
   const idleRef = useRef<number>(0);
@@ -116,6 +128,46 @@ export function InteractionLab() {
    * pointermove of a drag, and a React render per move is exactly the cost the
    * whole architecture exists to avoid.
    */
+  /**
+   * The pixel grid's canvas, sized in device pixels and repainted on every
+   * camera write. It is the root's first child so it paints under the frames,
+   * and it goes away entirely in fill mode, where the canvas is not the thing
+   * you are looking at.
+   */
+  const gridRef = useRef<HTMLCanvasElement | null>(null);
+  const [showGrid, setShowGrid] = useState(true);
+  const showGridRef = useRef(showGrid);
+  showGridRef.current = showGrid;
+
+  const paintGrid = useCallback(() => {
+    const canvas = gridRef.current;
+    if (!canvas) return;
+    const r = rectRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const want = { w: Math.round(r.width * dpr), h: Math.round(r.height * dpr) };
+    if (canvas.width !== want.w || canvas.height !== want.h) {
+      canvas.width = want.w;
+      canvas.height = want.h;
+      canvas.style.width = `${r.width}px`;
+      canvas.style.height = `${r.height}px`;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    if (!showGridRef.current || modeRef.current === 'fill') {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    // The grid has to contrast with whatever colour the canvas has been set
+    // to, so its own colour follows the background's luminance.
+    const bg = parseColour(getComputedStyle(canvas).getPropertyValue('--canvas') || '#f1f1f1');
+    paintPixelGrid(ctx, store.get(), { width: r.width, height: r.height },
+      bg ? { light: isLight(bg) } : {});
+  }, [store]);
+
+  const paintGridRef = useRef<(() => void) | null>(null);
+  paintGridRef.current = paintGrid;
+
   const snapLayerRef = useRef<HTMLDivElement | null>(null);
   const badgeRef = useRef<HTMLDivElement | null>(null);
 
@@ -195,6 +247,7 @@ export function InteractionLab() {
       : c;
     layer.style.transform = transformFor(camera);
     layer.style.setProperty('--inv-zoom', String(toDomPrecision(1 / camera.z)));
+    paintGridRef.current?.();
 
     // Chrome is placed, not scaled: it lives outside the transformed layer, so
     // it never stretches mid-gesture the way anything inside the layer does.
@@ -311,10 +364,41 @@ export function InteractionLab() {
     // when the animation happens to end.
     setMode('explore');
     setActiveId(null);
+    focusCameraRef.current = null;
     const back = exploreCameraRef.current;
     exploreCameraRef.current = null;
     if (back) animateTo(back);
   }, [animateTo]);
+
+  /**
+   * Fill puts the frame at the viewport's origin at zoom 1.
+   *
+   * Not a separate container: moving the frame elsewhere in the DOM would
+   * remount the screen and lose its state, which is the whole thing the canvas
+   * is careful about. Same element, camera parked so the frame's page origin
+   * lands at screen 0,0, and the frame sized to the window. Zoom 1 also means
+   * the transform is a bare translate, which rides the cheap layer-move path
+   * rather than re-rasterising every frame.
+   */
+  const enterFill = useCallback((id: string) => {
+    const box = layoutRef.current[id];
+    if (!box) return;
+    if (modeRef.current === 'focus') focusCameraRef.current = store.get();
+    else if (modeRef.current === 'explore') exploreCameraRef.current = store.get();
+    setSelected(id);
+    setActiveId(id);
+    setMode('fill');
+    store.set({ x: -box.x, y: -box.y, z: 1 });
+  }, [store]);
+
+  const exitFill = useCallback(() => {
+    setMode('focus');
+    const back = focusCameraRef.current;
+    focusCameraRef.current = null;
+    const box = activeId ? layoutRef.current[activeId] : null;
+    if (back) animateTo(back);
+    else if (box) animateTo(zoomToBounds(box, viewport(), 0));
+  }, [activeId, animateTo, viewport]);
 
   const registerEscape = useCallback((id: string, fn: (() => boolean) | null) => {
     if (fn) escapeRef.current.set(id, fn);
@@ -498,6 +582,7 @@ export function InteractionLab() {
     const measure = () => {
       rectRef.current = el.getBoundingClientRect();
       recull();                      // now with a real rect, unlike at mount
+      paintGrid();
     };
     measure();
 
@@ -530,7 +615,7 @@ export function InteractionLab() {
       window.removeEventListener('pagehide', onPageHide);
       saver.saveNow();
     };
-  }, [markMoved, recull, saver, store, viewport]);
+  }, [markMoved, paintGrid, recull, saver, store, viewport]);
 
   const layerCallback = useCallback((el: HTMLDivElement | null) => {
     layerRef.current = el;
@@ -565,16 +650,32 @@ export function InteractionLab() {
 
       // Locked in, the screen owns the keyboard. The lab listens for two keys
       // and nothing else, and Escape goes to the screen first.
-      if (modeRef.current === 'focus') {
+      if (modeRef.current !== 'explore') {
         if (e.key === 'Escape') {
           const claim = activeId ? escapeRef.current.get(activeId) : undefined;
           if (claim && claim()) return;       // the screen had something to close
           e.preventDefault();
-          exitLock();
-        } else if (e.key === '!' || (e.shiftKey && e.code === 'Digit1')) {
+          // One step back, not all the way out: fill returns to focus, focus
+          // returns to the canvas.
+          if (modeRef.current === 'fill') exitFill();
+          else exitLock();
+        } else if (e.shiftKey && e.code === 'Digit1') {
           e.preventDefault();
           exitLock();
           fitAll();
+        } else if (e.shiftKey && e.code === 'KeyF') {
+          e.preventDefault();
+          if (modeRef.current === 'fill') exitFill();
+          else if (activeId) enterFill(activeId);
+        } else if (e.key === 'Tab') {
+          // Cycle which screen is in front without leaving the mode.
+          e.preventDefault();
+          const order = SCREENS.map((sc) => sc.id);
+          const at = activeId ? order.indexOf(activeId) : -1;
+          const next = order[(at + (e.shiftKey ? -1 : 1) + order.length) % order.length];
+          if (!next) return;
+          if (modeRef.current === 'fill') enterFill(next);
+          else lockInto(next);
         }
         return;
       }
@@ -596,6 +697,10 @@ export function InteractionLab() {
         e.preventDefault();
         const p = centre();
         animateTo(zoomAbout(store.get(), p.x, p.y, 1));
+      } else if (e.shiftKey && e.code === 'KeyF') {
+        e.preventDefault();
+        const target = selectedRef.current ?? SCREENS[0]?.id;
+        if (target) enterFill(target);
       } else if (e.key === 'Enter' && selectedRef.current) {
         e.preventDefault();
         lockInto(selectedRef.current);
@@ -640,8 +745,8 @@ export function InteractionLab() {
     // Capture, so a focused screen cannot swallow Escape before the lab sees it.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [activeId, animateTo, applyCamera, commitNudge, exitLock, fitAll, fitTo, lockInto,
-      paintFrame, persist, stepHistory, store]);
+  }, [activeId, animateTo, applyCamera, commitNudge, enterFill, exitFill, exitLock, fitAll,
+      fitTo, lockInto, paintFrame, persist, stepHistory, store]);
 
   // Layout changes from the keyboard still have to reach the DOM and storage.
   layoutRef.current = layout;
@@ -655,6 +760,7 @@ export function InteractionLab() {
 
   return (
     <div className={styles.root} ref={rootCallback} data-mode={mode}>
+      <canvas className={styles.grid} ref={gridRef} aria-hidden="true" />
       <div ref={keysCallback} hidden />
 
       <div
@@ -666,12 +772,19 @@ export function InteractionLab() {
         {SCREENS.map((def) => {
           const box = layout[def.id];
           if (!box) return null;
+          // Fill borrows the window's size for the duration. The stored layout
+          // is untouched, so leaving fill restores the real size with nothing
+          // to undo.
+          const filling = mode === 'fill' && activeId === def.id;
+          const size = filling
+            ? { width: window.innerWidth, height: window.innerHeight }
+            : { width: box.width, height: box.height };
           return (
             <ScreenFrame
               key={def.id}
               def={def}
               position={{ x: box.x, y: box.y }}
-              size={{ width: box.width, height: box.height }}
+              size={size}
               selected={selected === def.id}
               active={activeId === def.id}
               dimmed={mode === 'focus' && activeId !== def.id}
@@ -716,15 +829,33 @@ export function InteractionLab() {
           >
             {zoomLabel}%
           </button>
-          {mode === 'focus' && (
+          {mode !== 'explore' && (
             <>
               <span className={styles.hudDivider} />
               <span className={styles.hudBadge}>
-                <b>{activeName}</b> · Esc to exit
+                <b>{activeName}</b>
+                {mode === 'fill' ? ' · filling · Esc for the frame' : ' · Esc to exit'}
               </span>
+              <button
+                type="button"
+                className={styles.hudButton}
+                onClick={() => (mode === 'fill' ? exitFill() : activeId && enterFill(activeId))}
+                title="Give this screen the whole window (Shift F)"
+              >
+                {mode === 'fill' ? 'Frame' : 'Fill'}
+              </button>
             </>
           )}
           <span className={styles.hudDivider} />
+          <button
+            type="button"
+            className={styles.hudButton}
+            data-on={showGrid || undefined}
+            onClick={() => { setShowGrid((v) => !v); requestAnimationFrame(() => paintGrid()); }}
+            title="The pixel grid, ten units"
+          >
+            Grid
+          </button>
           <button
             type="button"
             className={styles.hudButton}

@@ -254,3 +254,13 @@
   pointer-events: none;
   transform: translate(-50%, 8px);
 }
+
+/* Under everything: the root's first child, so frames paint over it. */
+.grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.hudButton[data-on] { background: rgb(255 255 255 / 0.18); }
