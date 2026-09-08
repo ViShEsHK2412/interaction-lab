@@ -44,14 +44,32 @@ export function tilePosition(
   size: { width: number; height: number } = DEFAULT_HTML_SIZE,
   columns = TILE_COLUMNS,
   gap = TILE_GAP,
+  startY = 0,
 ): { x: number; y: number } {
   const cols = Math.max(1, Math.floor(columns));
   const col = index % cols;
   const row = Math.floor(index / cols);
   return {
     x: col * (size.width + gap),
-    y: row * (size.height + gap),
+    y: startY + row * (size.height + gap),
   };
+}
+
+/**
+ * The first free row under everything that declared its own position.
+ *
+ * Auto-placed screens start at the origin, and so do the screens that name a
+ * position in a manifest, so tiling from zero drops the new frames on top of
+ * the old ones — overlapping frames, overlapping labels, and a canvas that
+ * looks broken the moment a second kind of screen exists.
+ */
+export function firstFreeRow(
+  placed: readonly { position: { x: number; y: number }; height: number }[],
+  gap = TILE_GAP,
+): number {
+  if (placed.length === 0) return 0;
+  const bottom = Math.max(...placed.map((p) => p.position.y + p.height));
+  return bottom + gap;
 }
 
 /**
@@ -250,6 +268,37 @@ function skipString(css: string, at: number): number {
     if (css[k] === quote) return k;
   }
   return css.length - 1;
+}
+
+/**
+ * Does this markup wire anything up with an inline handler?
+ *
+ * `onclick="save()"` resolves `save` as a global, so a script wrapped in a
+ * function to give it its own `document` would put that function out of reach
+ * and the button would stop working. A file written that way keeps the raw
+ * global scope, and pays for it with the shared-id problem instead.
+ */
+export function usesInlineHandlers(markup: string): boolean {
+  return /<[^>]+\son[a-z]+\s*=/i.test(markup);
+}
+
+/**
+ * Wrap a script so `document` means "this screen" inside it.
+ *
+ * Two variants of one card, mounted side by side, both contain `id="title"`,
+ * and `document.getElementById('title')` returns whichever mounted first — so
+ * the second variant's script silently drives the first variant's DOM. That is
+ * the real cost of one shared document, and it lands hardest on exactly the
+ * case the canvas is for: the same file, ten times, slightly different.
+ *
+ * The wrapper shadows `document` with a proxy scoped to the screen's own root.
+ * Everything else about it falls through, so `document.body`, `createElement`
+ * and `currentScript` all behave.
+ */
+export function wrapScript(text: string, screenId: string): string {
+  return `;(function(document){
+${text}
+})(window.__labScope(${JSON.stringify(screenId)}));`;
 }
 
 /**

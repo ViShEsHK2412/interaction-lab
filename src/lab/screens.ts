@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import type { ScreenManifest } from './screen-manifest';
 import {
-  DEFAULT_HTML_SIZE, htmlScreenId, orderHtmlFiles, tilePosition, titleFromSlug,
+  DEFAULT_HTML_SIZE, firstFreeRow, htmlScreenId, orderHtmlFiles, tilePosition, titleFromSlug,
 } from './core/html-screens';
 
 /**
@@ -129,7 +129,7 @@ function build(): ScreenDef[] {
         component: null,
         html,
         htmlFile: file,
-        isolate: manifest.isolate !== false,
+        isolate: manifest.isolate === true,
       });
     } else if (manifest.component) {
       out.push({
@@ -137,6 +137,10 @@ function build(): ScreenDef[] {
       });
     }
   }
+
+  // Everything above declared where it goes. The tiled screens start below
+  // all of it rather than on top of it.
+  const startY = firstFreeRow(out);
 
   // ── Folders that are just HTML ─────────────────────────────────────────
   for (const [dir, files] of byDir) {
@@ -151,7 +155,7 @@ function build(): ScreenDef[] {
     for (const file of ordered) {
       const id = claim(htmlScreenId(dir, file), `${dir}/${file}`);
       if (!id) continue;
-      const position = tilePosition(tiled++, DEFAULT_HTML_SIZE);
+      const position = tilePosition(tiled++, DEFAULT_HTML_SIZE, undefined, undefined, startY);
       out.push({
         id,
         dir,
@@ -165,7 +169,9 @@ function build(): ScreenDef[] {
         component: null,
         html: files.get(file) ?? '',
         htmlFile: file,
-        isolate: true,
+        // Light DOM. A shadow root would cut the file's own scripts off from
+        // `document.getElementById`, which is how a prototype finds itself.
+        isolate: false,
         solo,
       });
     }

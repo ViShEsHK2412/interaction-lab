@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useScreen } from '../screen-context';
-import { BODY_ATTR, parseHtmlDocument, scopeCss } from './html-screens';
+import {
+  BODY_ATTR, parseHtmlDocument, scopeCss, usesInlineHandlers, wrapScript,
+} from './html-screens';
 
 /**
  * The lab's registry of mounted HTML screens, on `window`.
@@ -14,7 +16,42 @@ import { BODY_ATTR, parseHtmlDocument, scopeCss } from './html-screens';
 declare global {
   interface Window {
     __labScreens?: Record<string, HTMLElement>;
+    __labScope?: (screenId: string) => Document;
   }
+}
+
+/**
+ * `document`, as one screen sees it.
+ *
+ * Element ids are unique within a file and emphatically not across a canvas of
+ * ten variants of that file, so the four lookups that search the whole document
+ * are re-pointed at the screen's own root. Everything else falls through to the
+ * real document, bound to it, so `createElement`, `body` and `currentScript`
+ * are untouched.
+ */
+function scopedDocument(root: HTMLElement): Document {
+  return new Proxy(document, {
+    get(target, prop) {
+      switch (prop) {
+        case 'getElementById':
+          return (id: string) => root.querySelector(`[id="${CSS.escape(id)}"]`);
+        case 'querySelector':
+          return (sel: string) => root.querySelector(sel);
+        case 'querySelectorAll':
+          return (sel: string) => root.querySelectorAll(sel);
+        case 'getElementsByClassName':
+          return (cls: string) => root.getElementsByClassName(cls);
+        case 'getElementsByTagName':
+          return (tag: string) => root.getElementsByTagName(tag);
+        default: {
+          const value = Reflect.get(target, prop) as unknown;
+          return typeof value === 'function'
+            ? (value as (...a: unknown[]) => unknown).bind(target)
+            : value;
+        }
+      }
+    },
+  }) as Document;
 }
 
 export interface HtmlScreenProps {
@@ -60,6 +97,17 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
     // themes itself with a body class still themes itself.
     const body = document.createElement('div');
     body.setAttribute(BODY_ATTR, '');
+    /*
+     * Fill the frame.
+     *
+     * A file's `body { background }` becomes a rule on this element, and a
+     * plain div is only as tall as its text, so the background painted a band
+     * across the top and the frame showed through below it. The host is a
+     * column flex box of definite height and this grows to fill it, which also
+     * gives the file's own `height: 100%` a parent to resolve against.
+     */
+    body.style.flex = '1 0 auto';
+    body.style.minHeight = '100%';
     if (parsed.bodyClass) body.className = parsed.bodyClass;
 
     for (const sheet of parsed.styles) {
@@ -90,17 +138,31 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
      * exactly what makes `document.getElementById` inside a prototype keep
      * working — as long as the mount is not behind a shadow root.
      */
+    window.__labScreens = { ...window.__labScreens, [screenId]: body };
+    // Reads the registry at call time rather than closing over it: screens
+    // mount and unmount independently, and a captured copy would be stale for
+    // every screen that arrived after this one.
+    window.__labScope = (id: string) => scopedDocument(window.__labScreens?.[id] ?? body);
+
+    // A file that wires buttons up with `onclick=` needs its functions to stay
+    // global, so it keeps the raw scope and the shared-id risk that comes with
+    // it. Everything else gets a `document` that means this screen.
+    const scopeScripts = !usesInlineHandlers(parsed.body);
+
     const added: HTMLScriptElement[] = [];
     for (const spec of parsed.scripts) {
       const script = document.createElement('script');
       if (spec.type) script.type = spec.type;
-      if (spec.src) script.src = spec.src;
-      else script.textContent = spec.text;
+      if (spec.src) {
+        script.src = spec.src;
+      } else if (scopeScripts && !spec.module) {
+        script.textContent = wrapScript(spec.text, screenId);
+      } else {
+        script.textContent = spec.text;
+      }
       body.appendChild(script);
       added.push(script);
     }
-
-    window.__labScreens = { ...window.__labScreens, [screenId]: body };
 
     return () => {
       for (const script of added) script.remove();
@@ -147,5 +209,11 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
     return () => setEscapeInterceptor(null);
   }, [active, screenId, setEscapeInterceptor]);
 
-  return <div ref={hostRef} data-lab-html={screenId} style={{ minHeight: '100%' }} />;
+  return (
+    <div
+      ref={hostRef}
+      data-lab-html={screenId}
+      style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}
+    />
+  );
 }

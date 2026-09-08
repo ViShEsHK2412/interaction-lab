@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BODY_SCOPE, DEFAULT_HTML_SIZE, htmlScreenId, orderHtmlFiles,
   scopeCss, scopeSelectorList, tilePosition, titleFromSlug,
+  usesInlineHandlers, wrapScript, firstFreeRow,
 } from './html-screens';
 
 /** Whitespace is free in CSS and the scoper adds some. Compare on shape. */
@@ -58,6 +59,24 @@ describe('tilePosition', () => {
     expect(tilePosition(3, DEFAULT_HTML_SIZE, 0)).toEqual({
       x: 0, y: (DEFAULT_HTML_SIZE.height + 120) * 3,
     });
+  });
+});
+
+describe('firstFreeRow', () => {
+  it('is the origin when nothing is placed yet', () => {
+    expect(firstFreeRow([])).toBe(0);
+  });
+
+  it('clears the lowest edge, not the first one it sees', () => {
+    expect(firstFreeRow([
+      { position: { x: 0, y: 0 }, height: 900 },
+      { position: { x: 0, y: 2000 }, height: 100 },
+      { position: { x: 0, y: 500 }, height: 200 },
+    ])).toBe(2100 + 120);
+  });
+
+  it('handles a screen placed at a negative coordinate', () => {
+    expect(firstFreeRow([{ position: { x: 0, y: -500 }, height: 100 }])).toBe(-400 + 120);
   });
 });
 
@@ -135,6 +154,48 @@ describe('scopeSelectorList', () => {
   it('scopes a descendant selector at its head only', () => {
     expect(tidy(scopeSelectorList('body > .card p')))
       .toBe(`${BODY_SCOPE} > .card p`);
+  });
+});
+
+describe('usesInlineHandlers', () => {
+  it('spots a handler attribute', () => {
+    expect(usesInlineHandlers('<button onclick="go()">x</button>')).toBe(true);
+    expect(usesInlineHandlers('<img onerror=boom>')).toBe(true);
+  });
+
+  it('is not fooled by a word that merely starts with on', () => {
+    expect(usesInlineHandlers('<div data-only="1">only</div>')).toBe(false);
+    expect(usesInlineHandlers('<p>click on this</p>')).toBe(false);
+  });
+
+  it('is not fooled by an attribute value containing onclick', () => {
+    expect(usesInlineHandlers('<div data-note="onclick=x">y</div>')).toBe(false);
+  });
+
+  it('says no for markup with no attributes at all', () => {
+    expect(usesInlineHandlers('<div><span>hi</span></div>')).toBe(false);
+  });
+});
+
+describe('wrapScript', () => {
+  it('shadows document with the screen’s own scope', () => {
+    const out = wrapScript('var a = 1;', 'cards/soft');
+    expect(out).toContain('function(document)');
+    expect(out).toContain('window.__labScope("cards/soft")');
+    expect(out).toContain('var a = 1;');
+  });
+
+  it('quotes an id safely rather than splicing it in', () => {
+    expect(wrapScript('', 'a"b')).toContain(JSON.stringify('a"b'));
+  });
+
+  it('opens with a semicolon, so it cannot join the line before it', () => {
+    expect(wrapScript('x()', 'a').startsWith(';')).toBe(true);
+  });
+
+  it('puts a newline before the close, so a trailing // comment cannot eat it', () => {
+    const out = wrapScript('// note', 'a');
+    expect(out).toContain('// note' + String.fromCharCode(10) + '})');
   });
 });
 
