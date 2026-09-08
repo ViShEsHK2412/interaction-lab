@@ -544,7 +544,7 @@ export function InteractionLab() {
      */
     const play = playRef.current;
     const frame = activeFrameRef.current;
-    if (play && frame) {
+    if (play && frame && !playHeldRef.current) {
       const box = frame.getBoundingClientRect();
       const root = rectRef.current;
       const x = box.right - root.left;
@@ -690,6 +690,23 @@ export function InteractionLab() {
   const activeFrameRef = useRef<HTMLElement | null>(null);
 
   /**
+   * Held down right now, and therefore not to be moved.
+   *
+   * A click only exists if the press and the release land on the same element.
+   * This button is placed imperatively on every camera write, and it has a
+   * threshold in it — above the frame's corner when there is room, tucked
+   * inside when there is not — so a frame sitting near that threshold could
+   * flip the button 34px mid-press. The release then landed on whatever was
+   * behind it, no click was ever formed, and the button looked dead while the
+   * shortcut it duplicates kept working.
+   *
+   * Nothing repositions a control while it is being pressed. That is true
+   * whatever moved underneath it, which is why this is the fix rather than
+   * chasing the particular cause.
+   */
+  const playHeldRef = useRef(false);
+
+  /**
    * A readout of what the fill control actually did.
    *
    * "It does not work" and "the click never arrived" look identical from the
@@ -699,7 +716,9 @@ export function InteractionLab() {
    * number, nothing is reaching the button at all and the problem is in front
    * of it, not inside it.
    */
-  const [probe, setProbe] = useState({ down: 0, click: 0, did: '—', up: '—', moved: 0 });
+  const [probe, setProbe] = useState({
+    down: 0, click: 0, did: '—', up: '—', moved: 0, why: '—',
+  });
 
   useEffect(() => {
     activeFrameRef.current = activeId
@@ -1674,21 +1693,46 @@ export function InteractionLab() {
                * exactly that, so record where the release went and whether the
                * button moved out from under it.
                */
+              playHeldRef.current = true;
               const el = playRef.current;
               const before = el?.getBoundingClientRect();
+              const camBefore = store.get();
+              const frameBefore = activeFrameRef.current?.getBoundingClientRect();
               const onUp = (ev: PointerEvent) => {
                 window.removeEventListener('pointerup', onUp, true);
-                const after = el?.getBoundingClientRect();
+                playHeldRef.current = false;
+                const now = playRef.current;
+                const after = now?.getBoundingClientRect();
                 const t = ev.target as HTMLElement | null;
                 const moved = before && after
                   ? Math.round(Math.hypot(after.left - before.left, after.top - before.top))
                   : -1;
                 const name = t
-                  ? `${t.tagName.toLowerCase()}${t === el ? '(button)' : ''}`
+                  ? `${t.tagName.toLowerCase()}${t === now ? '(button)' : ''}`
                   : 'nothing';
-                setProbe((p) => ({ ...p, up: name, moved }));
+                /*
+                 * Which of the three things under the button moved: the
+                 * camera, the frame, or the element itself. They have
+                 * different causes and different fixes, and from the outside
+                 * they look the same.
+                 */
+                const cam = store.get();
+                const frameAfter = activeFrameRef.current?.getBoundingClientRect();
+                const camMoved = Math.round(Math.hypot(cam.x - camBefore.x, cam.y - camBefore.y));
+                const frameMoved = frameBefore && frameAfter
+                  ? Math.round(Math.hypot(
+                    frameAfter.left - frameBefore.left, frameAfter.top - frameBefore.top))
+                  : -1;
+                const why = `cam${camMoved}/z${camBefore.z.toFixed(2)}→${cam.z.toFixed(2)} frame${frameMoved}`
+                  + (now === el ? '' : ' REMOUNTED');
+                setProbe((p) => ({ ...p, up: name, moved, why }));
               };
               window.addEventListener('pointerup', onUp, true);
+              const release = () => {
+                playHeldRef.current = false;
+                window.removeEventListener('pointercancel', release, true);
+              };
+              window.addEventListener('pointercancel', release, true);
               setProbe((p) => ({ ...p, down: p.down + 1 }));
             }}
             onClick={() => {
@@ -1746,7 +1790,8 @@ export function InteractionLab() {
               <span className={styles.hudDivider} />
               <span className={styles.hudProbe} title="What the fill control did: presses that reached the button, clicks that reached the handler, and the branch it took">
                 {mode} · {activeId ?? 'none'} · down {probe.down} · click {probe.click}
-                {' · up '}{probe.up}{' · moved '}{probe.moved}{'px · '}{probe.did}
+                {' · up '}{probe.up}{' · moved '}{probe.moved}{'px · '}{probe.why}
+                {' · '}{probe.did}
               </span>
 
             </>
