@@ -689,6 +689,18 @@ export function InteractionLab() {
   /** The focused frame's element, so its control can be placed from its box. */
   const activeFrameRef = useRef<HTMLElement | null>(null);
 
+  /**
+   * A readout of what the fill control actually did.
+   *
+   * "It does not work" and "the click never arrived" look identical from the
+   * outside, and they need opposite fixes. This separates them: it counts the
+   * presses that reached the button and the clicks that reached the handler,
+   * and records the branch the handler took. If pressing it moves neither
+   * number, nothing is reaching the button at all and the problem is in front
+   * of it, not inside it.
+   */
+  const [probe, setProbe] = useState({ down: 0, click: 0, did: '—' });
+
   useEffect(() => {
     activeFrameRef.current = activeId
       ? layerRef.current?.querySelector<HTMLElement>(`[data-screen-id="${CSS.escape(activeId)}"]`) ?? null
@@ -1652,7 +1664,22 @@ export function InteractionLab() {
             aria-label={mode === 'fill'
               ? 'Back to the frame'
               : 'Give this screen the whole window'}
+            onPointerDown={() => setProbe((p) => ({ ...p, down: p.down + 1 }))}
             onClick={() => {
+              /*
+               * Decided here, not inside the updater.
+               *
+               * React runs a functional update when it processes the render,
+               * which is after this handler has finished — so a ref read in
+               * there reports the state the handler *produced*, not the state
+               * it decided from. The first version of this readout did exactly
+               * that and reported "exitFill" for a click that had just entered
+               * fill, which is the opposite of the truth.
+               */
+              const did = modeRef.current === 'fill'
+                ? 'exitFill'
+                : activeIdRef.current ? `enterFill(${activeIdRef.current})` : 'no active screen';
+              setProbe((p) => ({ ...p, click: p.click + 1, did }));
               /*
                * Refs, not the render's `mode` and `activeId`.
                *
@@ -1689,6 +1716,10 @@ export function InteractionLab() {
               <span className={styles.hudBadge}>
                 <b>{activeName}</b>
                 {mode === 'fill' ? ' · filling · Esc for the frame' : ' · Esc to exit'}
+              </span>
+              <span className={styles.hudDivider} />
+              <span className={styles.hudProbe} title="What the fill control did: presses that reached the button, clicks that reached the handler, and the branch it took">
+                {mode} · {activeId ?? 'none'} · down {probe.down} · click {probe.click} · {probe.did}
               </span>
 
             </>
