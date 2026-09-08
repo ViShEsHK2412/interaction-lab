@@ -215,6 +215,20 @@ export function InteractionLab() {
   const [showRulers, setShowRulers] = useState(false);
   const showRulersRef = useRef(showRulers);
   showRulersRef.current = showRulers;
+  /**
+   * Ruler mode with the rules themselves out of the way (Ctrl/Cmd Shift R).
+   *
+   * A separate flag rather than a third value of `showRulers`, because the two
+   * answer different questions: ruler mode is whether guides exist at all, and
+   * this is whether the gutters are drawn. Guides you have already placed stay
+   * visible, stay draggable and keep snapping frames to them; what goes is the
+   * two bands of chrome and the chips that live inside them. Only the gutters
+   * can source a *new* guide, so while they are hidden there is nothing to
+   * drag one out of, which is the honest cost of the shortcut.
+   */
+  const [rulesHidden, setRulesHidden] = useState(false);
+  const rulesHiddenRef = useRef(rulesHidden);
+  rulesHiddenRef.current = rulesHidden;
   const guidesRef = useRef<Guide[]>(bootGuides);
   const nextGuideId = useRef(bootGuides.length + 1);
   const activeGuideRef = useRef<number | null>(null);
@@ -369,8 +383,12 @@ export function InteractionLab() {
     // gutters paint over them, and the guide labels sit on top of the gutters.
     beginRulerPass(ctx, size);
     paintGuides(ctx, store.get(), size, guidesRef.current, colours, activeGuideRef.current);
-    paintRulers(ctx, store.get(), size, colours, bands);
-    paintGuideLabels(ctx, store.get(), guidesRef.current, colours);
+    // The labels are chips drawn inside the gutters, so they leave with them
+    // rather than being left floating against the canvas.
+    if (!rulesHiddenRef.current) {
+      paintRulers(ctx, store.get(), size, colours, bands);
+      paintGuideLabels(ctx, store.get(), guidesRef.current, colours);
+    }
   }, [store]);
 
   const paintRulerRef = useRef<(() => void) | null>(null);
@@ -674,7 +692,9 @@ export function InteractionLab() {
     const camera = store.get();
 
     const existing = guideUnder(guidesRef.current, at, camera);
-    const fromRule = ruleAt(at.x, at.y);
+    // With the gutters hidden there is no rule under the pointer to claim: a
+    // press there is a press on the canvas, and pans like one.
+    const fromRule = rulesHiddenRef.current ? null : ruleAt(at.x, at.y);
     if (!existing && !fromRule) return;              // a press on the canvas
 
     e.preventDefault();
@@ -706,8 +726,11 @@ export function InteractionLab() {
       window.removeEventListener('pointermove', place);
       window.removeEventListener('pointerup', up);
       const local = { x: ev.clientX - rectRef.current.left, y: ev.clientY - rectRef.current.top };
-      // Dropped back in a rule, or off the canvas entirely: thrown away.
-      if (ruleAt(local.x, local.y) !== null || local.x < 0 || local.y < 0) {
+      // Dropped back in a rule, or off the canvas entirely: thrown away. With
+      // the rules hidden only the second half applies — there is no visible
+      // target to aim at, so a drop near the edge must not eat the guide.
+      const intoRule = !rulesHiddenRef.current && ruleAt(local.x, local.y) !== null;
+      if (intoRule || local.x < 0 || local.y < 0) {
         guidesRef.current = guidesRef.current.filter((g) => g.id !== guide.id);
         activeGuideRef.current = null;
       }
@@ -1243,9 +1266,26 @@ export function InteractionLab() {
         toast('Tidied into a row');
         return;
       }
+      // Ctrl/Cmd Shift R hides the rules without leaving ruler mode. It has to
+      // preventDefault whether or not it does anything, since the browser reads
+      // it as a cache-bypassing reload and would throw the session away.
+      if (e.shiftKey && e.code === 'KeyR' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (!showRulersRef.current) return;
+        setRulesHidden((v) => {
+          rulesHiddenRef.current = !v;
+          toast(!v ? 'Rules hidden, guides kept' : 'Rules shown');
+          return !v;
+        });
+        requestAnimationFrame(() => paintRulerRef.current?.());
+        return;
+      }
       if (e.shiftKey && e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         setShowRulers((v) => { showRulersRef.current = !v; return !v; });
+        // Coming back into ruler mode always comes back with the rules
+        // showing: the alternative is a mode that turns on and looks off.
+        setRulesHidden(() => { rulesHiddenRef.current = false; return false; });
         requestAnimationFrame(() => paintRulerRef.current?.());
         return;
       }
@@ -1626,9 +1666,10 @@ export function InteractionLab() {
             aria-pressed={showRulers}
             onClick={() => {
               setShowRulers((v) => { showRulersRef.current = !v; return !v; });
+              setRulesHidden(() => { rulesHiddenRef.current = false; return false; });
               requestAnimationFrame(() => paintRulerRef.current?.());
             }}
-            title="Rulers and guides (Shift R). Drag out of a rule to place one"
+            title="Rulers and guides (Shift R). Drag out of a rule to place one. Ctrl/Cmd Shift R hides the rules and keeps the guides"
           >
             <Icon name="rulers" />
             Rulers

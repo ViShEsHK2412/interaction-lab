@@ -30,7 +30,9 @@ arithmetic and you want to own them.
 - Three modes: explore, focus (`double-click`), fill (`Shift F`). `Esc` walks
   back one at a time, and a screen gets first refusal on it
 - Rulers and guides (`Shift R`) in page units, so they stay glued to the
-  content at every zoom. Frames snap to guides as readily as to each other
+  content at every zoom. Frames snap to guides as readily as to each other.
+  `Ctrl/Cmd Shift R` takes the rules away and leaves the guides, which still
+  drag, still snap, and still delete
 - A pixel grid that fades out rather than turning into a wash
 - The canvas colour is yours: a picker, a hex field that takes any of the four
   spellings people paste, and a swatch row of the ones you saved
