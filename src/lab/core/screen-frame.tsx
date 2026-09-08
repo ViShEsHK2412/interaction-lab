@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ScreenProvider, type ScreenState } from '../screen-context';
+import { HtmlScreen } from './html-screen';
 import type { Handle } from './snapping';
 import type { ScreenDef } from '../screens';
 import styles from './lab.module.css';
@@ -101,8 +102,21 @@ function ScreenFrameInner(props: FrameProps) {
     setEscapeInterceptor,
   }), [def.id, active, visible, measured, zoom, clientToFrame, setEscapeInterceptor]);
 
+  /**
+   * A React screen or an HTML file, and the frame does not care which.
+   *
+   * Memoised on the identity of the source rather than on `def`, so a screen
+   * does not remount every time the canvas hands the frame a new position.
+   */
   const Component = def.component;
-  const content = useMemo(() => <Component />, [Component]);
+  const html = def.html;
+  const content = useMemo(() => {
+    if (Component) return <Component />;
+    if (html !== null) {
+      return <HtmlScreen screenId={def.id} html={html} isolate={def.isolate} />;
+    }
+    return null;
+  }, [Component, html, def.id, def.isolate]);
 
   return (
     <div

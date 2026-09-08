@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hello from HTML</title>
+  <style>
+    /* Declared on :root, which is where a prototype always puts its tokens.
+       The lab rewrites this to the screen's own root, so it still resolves. */
+    :root {
+      --bg: #10131a;
+      --fg: #e8ecf2;
+      --accent: #7cc4ff;
+      --pad: 48px;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.6 ui-sans-serif, system-ui, sans-serif;
+      padding: var(--pad);
+      min-height: 100%;
+      box-sizing: border-box;
+    }
+    h1 { font-size: 44px; margin: 0 0 8px; letter-spacing: -.02em; }
+    p  { margin: 0 0 24px; color: #9aa7b8; max-width: 46ch; }
+    .row { display: flex; gap: 12px; align-items: center; }
+    button {
+      font: inherit; padding: 10px 18px; border-radius: 6px;
+      border: 1px solid #2c3644; background: #1a2029; color: var(--fg); cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    .count { font-variant-numeric: tabular-nums; color: var(--accent); font-size: 28px; }
+    /* Reads the contract straight off the screen root, in plain CSS. */
+    [data-active="true"] .badge { background: #14532d; color: #86efac; }
+    .badge {
+      font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+      padding: 4px 10px; border-radius: 3px; background: #2a2f3a; color: #8b95a5;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hello from HTML</h1>
+  <p>No React, no build step, no manifest. This folder holds one file, and the
+     canvas made it a screen.</p>
+  <div class="row">
+    <button id="bump">Count up</button>
+    <span class="count" id="out">0</span>
+    <span class="badge" id="state">explore</span>
+  </div>
+  <script>
+    // document.getElementById works, because the mount is in the lab's own
+    // document rather than behind a shadow root or an iframe.
+    var n = 0;
+    var out = document.getElementById('out');
+    document.getElementById('bump').addEventListener('click', function () {
+      out.textContent = ++n;
+    });
+    var badge = document.getElementById('state');
+    var root = out.closest('[data-lab-body]');
+    new MutationObserver(function () {
+      badge.textContent = root.getAttribute('data-active') === 'true' ? 'locked in' : 'explore';
+    }).observe(root, { attributes: true, attributeFilter: ['data-active'] });
+  </script>
+</body>
+</html>

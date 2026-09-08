@@ -26,10 +26,26 @@ import {
   distributeRow, resizeBox, snapMovingBox, snapResizedBox, SNAP_TOLERANCE_PX,
   type Handle, type SnapLine,
 } from './core/snapping';
-import { SCREENS } from './screens';
+import { SCREENS, type ScreenDef } from './screens';
 import { Icon } from './core/icons';
 import './core/theme.css';
 import styles from './core/lab.module.css';
+
+/**
+ * Whether a screen is the only thing its folder holds, and may therefore be
+ * duplicated, deleted or renamed as a folder.
+ *
+ * A folder of loose `.html` variants puts one frame on the canvas per file, so
+ * "delete this screen" would be a request to delete nine others along with it.
+ * The file operations refuse rather than guess, and say why: a destructive
+ * operation that silently does something adjacent is worse than one that
+ * declines.
+ */
+function ownsFolder(def: ScreenDef): boolean {
+  if (def.solo) return true;
+  toast(`${def.name} is one of several files in ${def.dir}/. Move it to its own folder first.`, 'warn');
+  return false;
+}
 
 /** How long the camera takes to travel, and the pause that counts as settled. */
 const ANIM_MS = 320;
@@ -904,6 +920,7 @@ export function InteractionLab() {
       clearSnapLines();
       const def = SCREENS.find((sc) => sc.id === d.id);
       if (!def) return;
+      if (!ownsFolder(def)) return;
       const as = copyName(def.dir, SCREENS.map((sc) => sc.dir));
       saver.saveNow();
       void labFs.duplicate(def.dir, as, `${def.name} copy`, { x: latest.x, y: latest.y })
@@ -1193,6 +1210,7 @@ export function InteractionLab() {
         const def = SCREENS.find((sc) => sc.id === selectedRef.current);
         const box = selectedRef.current ? layoutRef.current[selectedRef.current] : null;
         if (!def || !box) return;
+        if (!ownsFolder(def)) return;
         const as = copyName(def.dir, SCREENS.map((sc) => sc.dir));
         saver.saveNow();
         void labFs.duplicate(def.dir, as, `${def.name} copy`, { x: box.x + 32, y: box.y + 32 })
@@ -1221,6 +1239,7 @@ export function InteractionLab() {
         e.preventDefault();
         const def = SCREENS.find((sc) => sc.id === selectedRef.current);
         if (!def) return;
+        if (!ownsFolder(def)) return;
         saver.saveNow();
         void labFs.remove(def.dir).then((token) => {
           if (!token) { toast('Could not delete: no dev server', 'warn'); return; }
@@ -1260,7 +1279,10 @@ export function InteractionLab() {
         const byDir: Record<string, { x: number; y: number }> = {};
         for (const def of SCREENS) {
           const at = after[def.id];
-          if (at) byDir[def.dir] = { x: at.x, y: at.y };
+          // A variant sharing a folder has no manifest of its own to write to,
+          // and writing its position to the folder would hand one variant's
+          // place to all of them. The live layout still holds it.
+          if (at && def.solo) byDir[def.dir] = { x: at.x, y: at.y };
         }
         void labFs.setPositions(byDir);
         toast('Tidied into a row');
@@ -1531,6 +1553,7 @@ export function InteractionLab() {
             onDoubleClick={() => {
               // Renames, per the spec's key map. The lock-in gesture is a
               // double-click on the frame itself, which is a different target.
+              if (!ownsFolder(def)) return;
               const next = window.prompt('Rename this screen', def.name);
               if (!next || next === def.name) return;
               void labFs.rename(def.dir, next).then((ok) => {

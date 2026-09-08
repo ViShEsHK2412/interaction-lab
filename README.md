@@ -1,6 +1,7 @@
 # interaction-lab
 
 A Figma-style infinite canvas that hosts your app screens, fully interactive.
+Screens are React components or plain HTML files.
 
 Zoom out to see every prototype at once. Pan around. Double-click a screen to
 lock in and use it like the real app.
@@ -98,6 +99,82 @@ so the reload each one triggers can land whenever it likes.
 The plugin is `apply: 'serve'`, so none of it exists in a production build. The
 client treats a failed request as "the file half did not happen", and the
 canvas carries on.
+
+## HTML screens
+
+A screen does not have to be React. Drop a `.html` file into a folder under
+`src/screens` and it is a screen:
+
+```
+src/screens/
+  html-hello/index.html          → one screen
+  html-variants/soft.html        → three screens, one per file
+                sharp.html
+                loud.html
+```
+
+No manifest, no imports, no build step. A folder holding several pages puts
+one frame on the canvas per file, which is the whole reason to want this: ten
+variants side by side instead of ten files opened one at a time. A `screen.ts`
+can still name one explicitly, with `src` in place of `component`:
+
+```ts
+const manifest: ScreenManifest = {
+  name: 'Pricing v3',
+  width: 1440, height: 900,
+  position: { x: 0, y: 0 },
+  src: './index.html',
+};
+```
+
+**Mounted into the lab's own document, not an iframe.** That is the decision
+everything else follows from. A measuring or annotating tool works on one
+document, so an iframe boundary would make it impossible to measure *between*
+two screens, which is the one comparison a canvas exists to make. It also
+means `document.getElementById` inside the file keeps working, which is how
+every hand-written prototype finds its own elements.
+
+The cost is that a file's CSS would otherwise restyle the lab and every screen
+beside it, so each stylesheet is rewritten to sit under the screen's own root.
+`:root`, `html` and `body` become that root — a prototype declares its tokens
+on `:root`, and they have to land somewhere — and everything else is nested
+under it. `scopeCss` does this and `html-screens.test.ts` holds it to the
+awkward cases: braces inside strings and comments, `@keyframes` steps that
+must not be touched, `@supports` inside `@media`, and unterminated everything.
+
+Setting `isolate: true` in a manifest mounts behind a shadow root instead.
+That is stronger isolation, and it cuts the file's scripts off from
+`document`, so it is the exception rather than the default.
+
+### The contract, for a file
+
+`useScreen()` is a React hook and a `.html` file cannot call one, so the same
+facts arrive on the screen's root element, where plain CSS and three lines of
+vanilla JS can both reach them:
+
+| | |
+|---|---|
+| `data-active` | `"true"` while locked in |
+| `data-visible` | `"false"` when culled offscreen |
+| `--frame-width`, `--frame-height` | the frame's size, in page units |
+| `lab:escape` event | cancel it to keep Escape; the lab exits otherwise |
+| `window.__labScreens[id]` | every mounted screen's root, for a test driver |
+
+`window.__lab` is deliberately left alone: a prototype that instruments itself
+for a Playwright driver almost always claims that name for its own readouts,
+and taking it would break the file the moment it was hosted.
+
+**The hard cases screen** (`src/screens/html-hard-cases`) runs all of this
+live and shows a pass/fail tally, including what each of the four in-page
+tools needs — hit-testing that reaches into a screen, a selector that
+round-trips through `querySelector`, computed styles that read back, an inline
+style that applies and reverts, and an animation there to freeze.
+
+### Screens are still folders
+
+File operations target folders, so a screen that shares its folder with other
+variants cannot be duplicated, deleted or renamed — the lab says so rather
+than taking the other nine files with it.
 
 ## The screen contract
 

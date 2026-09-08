@@ -1,0 +1,350 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>HTML hard cases</title>
+
+  <!-- Every construct here is one the CSS scoper has to survive. If the
+       stylesheet below still applies, and none of it reaches the lab's own
+       chrome, the rewrite is doing its job. -->
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --panel: #141922;
+      --fg: #e6ebf2;
+      --dim: #8a95a6;
+      --ok: #4cc38a;
+      --bad: #ff6a4d;
+      --edge: #232c39;
+      --pad: 32px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 14px/1.55 ui-sans-serif, system-ui, sans-serif;
+      padding: var(--pad);
+    }
+    body.themed { --fg: #e6ebf2; }
+
+    h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.02em; }
+    .sub { color: var(--dim); margin: 0 0 20px; }
+
+    .grid { display: flex; flex-direction: column; gap: 6px; }
+
+    .check {
+      display: grid;
+      grid-template-columns: 3.25rem 1fr auto;
+      gap: 12px;
+      align-items: baseline;
+      padding: 9px 12px;
+      background: var(--panel);
+      border: 1px solid var(--edge);
+      border-left: 3px solid var(--edge);
+    }
+    .check[data-ok="true"]  { border-left-color: var(--ok); }
+    .check[data-ok="false"] { border-left-color: var(--bad); }
+    .verdict { font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .1em; }
+    .check[data-ok="true"]  .verdict { color: var(--ok); }
+    .check[data-ok="false"] .verdict { color: var(--bad); }
+    .what { color: var(--fg); }
+    .what small { display: block; color: var(--dim); font-size: 12px; }
+    .value {
+      font: 400 12px/1.5 ui-monospace, monospace;
+      color: var(--dim);
+      text-align: right;
+      max-width: 22rem;
+      overflow-wrap: anywhere;
+    }
+
+    .bar { display: flex; gap: 10px; align-items: center; margin: 18px 0 22px; }
+    button {
+      font: inherit; padding: 8px 16px; background: #1c2431; color: var(--fg);
+      border: 1px solid var(--edge); cursor: pointer;
+    }
+    button:hover { border-color: var(--dim); }
+    .tally { font: 600 13px/1 ui-monospace, monospace; }
+
+    /* An attribute selector containing braces in a string — the scoper must
+       not treat these as block delimiters. */
+    [data-note="{not a block}"] { color: var(--dim); }
+
+    /* A running animation, which is what a freeze has to be able to pause. */
+    @keyframes pulse { 0% { opacity: .35; } 50% { opacity: 1; } 100% { opacity: .35; } }
+    .pulse { animation: pulse 1.4s ease-in-out infinite; }
+
+    @media (min-width: 100px) {
+      :root { --pad: 32px; }
+      .check { padding: 9px 12px; }
+    }
+
+    @supports (display: grid) {
+      .grid { display: flex; }
+    }
+
+    @font-face {
+      font-family: "NotReal";
+      src: local("This font does not exist");
+    }
+
+    dialog {
+      background: var(--panel); color: var(--fg);
+      border: 1px solid var(--edge); padding: 24px;
+    }
+    dialog::backdrop { background: rgba(0,0,0,.6); }
+
+    .probe { color: var(--dim); font-size: 12px; margin-top: 18px; }
+  </style>
+</head>
+
+<body class="themed">
+  <h1>HTML hard cases</h1>
+  <p class="sub">
+    Every check states what the right answer is, so you can look rather than
+    remember. Lock in with a double-click and re-run — three of these change
+    answer, correctly, when the screen owns the pointer.
+  </p>
+
+  <div class="bar">
+    <button id="run">Re-run checks</button>
+    <button id="open-dialog">Open a dialog (then press Esc)</button>
+    <span class="tally" id="tally">—</span>
+    <span class="pulse" id="pulser" style="color:var(--dim)">animating</span>
+  </div>
+
+  <div class="grid" id="out"></div>
+
+  <p class="probe" data-note="{not a block}">
+    This paragraph carries an attribute value with braces in it. If the page
+    below it renders at all, the scoper did not mistake that for a rule.
+  </p>
+
+  <dialog id="dlg">
+    <p style="margin:0 0 16px">The screen owns Escape while this is open.</p>
+    <button id="close-dialog">Close</button>
+  </dialog>
+
+  <script>
+  (function () {
+    var here = document.currentScript;
+    var root = (here && here.closest('[data-lab-body]'))
+            || document.querySelector('[data-lab-html] [data-lab-body]');
+    var out = document.getElementById('out');
+    var results = [];
+
+    function render() {
+      out.textContent = '';
+      var pass = 0;
+      results.forEach(function (r) {
+        if (r.ok) pass++;
+        var row = document.createElement('div');
+        row.className = 'check';
+        row.setAttribute('data-ok', String(r.ok));
+        row.innerHTML =
+          '<span class="verdict">' + (r.ok ? 'OK' : 'FAIL') + '</span>' +
+          '<span class="what">' + r.name + '<small>' + r.detail + '</small></span>' +
+          '<span class="value"></span>';
+        row.querySelector('.value').textContent = r.value;
+        out.appendChild(row);
+      });
+      document.getElementById('tally').textContent =
+        pass + ' / ' + results.length + ' passing';
+      window.__htmlHardCases = { pass: pass, total: results.length, results: results };
+    }
+
+    function run() {
+      results = [];
+      var id = root.parentElement && root.parentElement.getAttribute('data-lab-html');
+      var active = root.getAttribute('data-active') === 'true';
+
+      // ── The mount ────────────────────────────────────────────────────
+      add('In the lab’s own document',
+          'Not a shadow root and not an iframe. This is what lets one measuring pass reach every screen.',
+          function () {
+            var host = root.getRootNode();
+            return { ok: host === document, value: host === document ? 'document' : String(host) };
+          });
+
+      add('document.getElementById reaches me',
+          'How every hand-written prototype finds its own elements. A shadow root would break this.',
+          function () {
+            var el = document.getElementById('pulser');
+            return { ok: !!el && root.contains(el), value: el ? 'found, inside this screen' : 'null' };
+          });
+
+      add('Registered in window.__labScreens',
+          'A driver can scope its queries to one screen. Deliberately not window.__lab, which is yours.',
+          function () {
+            var reg = window.__labScreens || {};
+            var mine = id && reg[id] === root;
+            return { ok: !!mine, value: id ? id : '(no id)' };
+          });
+
+      // ── The contract ─────────────────────────────────────────────────
+      add('data-active and data-visible are on my root',
+          'The contract in the only shape a plain file can read: attributes, not a React hook.',
+          function () {
+            var a = root.getAttribute('data-active'), v = root.getAttribute('data-visible');
+            return { ok: a !== null && v !== null, value: 'active=' + a + ' visible=' + v };
+          });
+
+      add('--frame-width matches my real width',
+          'Sizes come from the frame, never from window.innerWidth.',
+          function () {
+            var declared = parseFloat(getComputedStyle(root).getPropertyValue('--frame-width'));
+            var real = root.clientWidth;
+            return { ok: Math.abs(declared - real) <= 2,
+                     value: declared + 'px declared, ' + real + 'px real' };
+          });
+
+      add('window.innerWidth is NOT my width',
+          'The trap this contract exists to prevent. These two must disagree.',
+          function () {
+            return { ok: window.innerWidth !== root.clientWidth,
+                     value: 'window ' + window.innerWidth + ' vs frame ' + root.clientWidth };
+          });
+
+      // ── CSS scoping ──────────────────────────────────────────────────
+      add(':root custom properties resolved',
+          'A prototype declares its tokens on :root. Rewritten to this screen’s root, they still cascade.',
+          function () {
+            var bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+            return { ok: bg === '#0c0f14', value: bg || '(empty)' };
+          });
+
+      add('My body{} rules landed on my root',
+          'Padding declared on body, applied to the screen root instead.',
+          function () {
+            var pad = getComputedStyle(root).paddingTop;
+            return { ok: parseFloat(pad) === 32, value: pad };
+          });
+
+      add('My CSS did not leak to the lab',
+          'h1 { font-size: 26px } must not restyle the lab’s own chrome or another screen.',
+          function () {
+            var probe = document.createElement('h1');
+            probe.style.position = 'absolute';
+            probe.style.visibility = 'hidden';
+            document.body.appendChild(probe);
+            var size = getComputedStyle(probe).fontSize;
+            probe.remove();
+            return { ok: size !== '26px', value: 'outside h1 is ' + size };
+          });
+
+      add('The universal selector stayed inside',
+          '* { box-sizing } is the most dangerous rule a prototype ships.',
+          function () {
+            var probe = document.createElement('div');
+            probe.style.position = 'absolute';
+            document.body.appendChild(probe);
+            var box = getComputedStyle(probe).boxSizing;
+            probe.remove();
+            return { ok: box !== 'border-box', value: 'outside box-sizing is ' + box };
+          });
+
+      add('@media block survived the rewrite',
+          'Rules inside an at-rule need scoping too, without the preamble being mangled.',
+          function () {
+            var pad = getComputedStyle(document.querySelector('.check') || root).paddingTop;
+            return { ok: !!document.querySelector('.check'), value: 'check padding ' + pad };
+          });
+
+      // ── What the four tools need ─────────────────────────────────────
+      add('align-ui / agentation: hit-testing reaches in',
+          'elementFromPoint must land on real content when locked in, and on the shield when not.',
+          function () {
+            var el = document.getElementById('pulser');
+            var r = el.getBoundingClientRect();
+            var hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            if (!hit) return { ok: false, value: 'nothing under the point' };
+            var inside = root.contains(hit);
+            var shielded = !inside && /shield/i.test(hit.className || '');
+            return { ok: active ? inside : (inside || shielded),
+                     value: (inside ? 'inside: ' : 'outside: ') + hit.tagName.toLowerCase() +
+                            (active ? ' (locked in)' : ' (explore)') };
+          });
+
+      add('agentation: a selector round-trips',
+          'It hands the agent a path. If querySelector cannot find its way back, the path is useless.',
+          function () {
+            var el = document.getElementById('pulser');
+            var path = '[data-lab-html="' + id + '"] #' + el.id;
+            var found = document.querySelector(path);
+            return { ok: found === el, value: found === el ? 'round-tripped' : 'lost' };
+          });
+
+      add('interface-kit: computed styles readable',
+          'It reads the current value before it can offer you a new one.',
+          function () {
+            var el = document.querySelector('.check') || root;
+            var cs = getComputedStyle(el);
+            return { ok: !!cs.backgroundColor, value: cs.backgroundColor };
+          });
+
+      add('interface-kit: inline style applies and reverts',
+          'applyStyle then revertProperty. If a React re-render clobbered it, this would not hold.',
+          function () {
+            var el = document.querySelector('.check') || root;
+            var before = el.style.borderRadius;
+            el.style.borderRadius = '13px';
+            var applied = getComputedStyle(el).borderTopLeftRadius === '13px';
+            el.style.borderRadius = before;
+            var reverted = getComputedStyle(el).borderTopLeftRadius !== '13px';
+            return { ok: applied && reverted, value: applied ? (reverted ? 'applied, reverted' : 'stuck') : 'not applied' };
+          });
+
+      add('align-ui: there is an animation to freeze',
+          'Freeze pauses running animations. It needs one to exist and be reachable.',
+          function () {
+            var el = document.getElementById('pulser');
+            if (!el.getAnimations) return { ok: false, value: 'getAnimations unsupported' };
+            var anims = el.getAnimations();
+            return { ok: anims.length > 0, value: anims.length + ' running' };
+          });
+
+      add('dialkit vanilla: a global survives the mount',
+          'Scripts are re-created so they execute. Its browser build needs exactly that.',
+          function () {
+            return { ok: window.__dialkitProbe === 'alive', value: String(window.__dialkitProbe) };
+          });
+
+      add('align-ui: my numbers are on a scale',
+          'The drift check. 32 and 12 are on an 4px scale; a 25.5 here would be the point.',
+          function () {
+            var pad = parseFloat(getComputedStyle(root).paddingTop);
+            return { ok: pad % 4 === 0, value: pad + 'px, ' + (pad % 4 === 0 ? 'on scale' : 'off scale') };
+          });
+
+      function add(name, detail, fn) {
+        var ok = false, value = '';
+        try { var r = fn(); ok = !!r.ok; value = r.value; }
+        catch (e) { ok = false; value = 'threw: ' + e.message; }
+        results.push({ name: name, detail: detail, ok: ok, value: String(value) });
+      }
+
+      render();
+    }
+
+    // A global set by a script tag, standing in for dialkit's vanilla build.
+    window.__dialkitProbe = 'alive';
+
+    document.getElementById('run').addEventListener('click', run);
+
+    // Escape arbitration: the dialog gets it first, the lab gets it second.
+    var dlg = document.getElementById('dlg');
+    document.getElementById('open-dialog').addEventListener('click', function () { dlg.show(); });
+    document.getElementById('close-dialog').addEventListener('click', function () { dlg.close(); });
+    root.addEventListener('lab:escape', function (e) {
+      if (dlg.open) { dlg.close(); e.preventDefault(); }
+    });
+
+    run();
+    // The frame delivers its size after the refs are in place, so the first
+    // width reading can be a frame behind. Re-run once it has landed.
+    requestAnimationFrame(function () { requestAnimationFrame(run); });
+  })();
+  </script>
+</body>
+</html>
