@@ -1696,6 +1696,12 @@ export function InteractionLab() {
               playHeldRef.current = true;
               const el = playRef.current;
               const before = el?.getBoundingClientRect();
+              // The three things that can put this element anywhere: its own
+              // transform, the margin the threshold flips, and the box its
+              // absolute position is resolved against.
+              const tBefore = el?.style.transform ?? '';
+              const mBefore = el ? getComputedStyle(el).marginTop : '';
+              const pBefore = (el?.offsetParent as HTMLElement | null)?.getBoundingClientRect();
               const camBefore = store.get();
               const frameBefore = activeFrameRef.current?.getBoundingClientRect();
               const onUp = (ev: PointerEvent) => {
@@ -1723,7 +1729,15 @@ export function InteractionLab() {
                   ? Math.round(Math.hypot(
                     frameAfter.left - frameBefore.left, frameAfter.top - frameBefore.top))
                   : -1;
-                const why = `cam${camMoved}/z${camBefore.z.toFixed(2)}→${cam.z.toFixed(2)} frame${frameMoved}`
+                const tAfter = now?.style.transform ?? '';
+                const mAfter = now ? getComputedStyle(now).marginTop : '';
+                const pAfter = (now?.offsetParent as HTMLElement | null)?.getBoundingClientRect();
+                const parentMoved = pBefore && pAfter
+                  ? Math.round(Math.hypot(pAfter.left - pBefore.left, pAfter.top - pBefore.top))
+                  : -1;
+                const why = `cam${camMoved} frame${frameMoved} parent${parentMoved}`
+                  + (tBefore === tAfter ? ' t=same' : ' t=CHANGED')
+                  + (mBefore === mAfter ? ` m=${mBefore}` : ` m=${mBefore}→${mAfter}`)
                   + (now === el ? '' : ' REMOUNTED');
                 setProbe((p) => ({ ...p, up: name, moved, why }));
               };
