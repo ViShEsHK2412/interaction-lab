@@ -726,6 +726,9 @@ export function InteractionLab() {
   }, [applyCamera, mode, store]);
 
   const exitFill = useCallback(() => {
+    // Nothing to leave. Without this a mistimed call animated the camera and
+    // changed nothing else, which reads as "it moved and did not work".
+    if (modeRef.current !== 'fill') return;
     goMode('focus');
     const back = focusCameraRef.current;
     focusCameraRef.current = null;
@@ -1191,7 +1194,7 @@ export function InteractionLab() {
         } else if (e.shiftKey && e.code === 'KeyF') {
           e.preventDefault();
           if (modeRef.current === 'fill') exitFill();
-          else if (activeId) enterFill(activeId);
+          else if (activeIdRef.current) enterFill(activeIdRef.current);
         } else if (e.key === 'Tab') {
           // Cycle which screen is in front without leaving the mode.
           e.preventDefault();
@@ -1625,7 +1628,22 @@ export function InteractionLab() {
             aria-label={mode === 'fill'
               ? 'Back to the frame'
               : 'Give this screen the whole window'}
-            onClick={() => (mode === 'fill' ? exitFill() : activeId && enterFill(activeId))}
+            onClick={() => {
+              /*
+               * Refs, not the render's `mode` and `activeId`.
+               *
+               * This is the one handler in the file that read state out of
+               * the closure it was created in, and it is a toggle, so being
+               * one render behind does not do nothing — it does the opposite
+               * thing. Reading a stale 'fill' in focus mode called exitFill,
+               * which animates the camera back to the stored focus view and
+               * changes nothing else: the canvas slides and the screen never
+               * fills. The refs are updated in the same breath as the state
+               * for exactly this.
+               */
+              if (modeRef.current === 'fill') exitFill();
+              else if (activeIdRef.current) enterFill(activeIdRef.current);
+            }}
           >
             <Icon name={mode === 'fill' ? 'minimize' : 'maximize'} size={14} strokeWidth={2} />
           </button>
