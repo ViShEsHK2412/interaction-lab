@@ -143,7 +143,18 @@
 }
 
 .label {
+  /*
+   * Sat on the frame's top-left corner, scaled about that corner.
+   *
+   * `bottom: 100%` puts its own bottom edge on the frame's top edge, and the
+   * scale divides through the zoom so it reads at one size on screen however
+   * far the canvas is zoomed. Anchored in CSS to the frame it names, so it
+   * cannot lag the frame during an animation or move out from under a press.
+   */
   position: absolute;
+  left: 0;
+  bottom: 100%;
+  transform: scale(var(--inv-zoom, 1));
   transform-origin: 0 100%;
   padding: 0 2px var(--space-tight);
   font-size: var(--type-tag);
@@ -263,16 +274,6 @@
   align-self: stretch;
   margin: 2px;                   /* geometry: inset from the bar's own padding */
   background: var(--hairline);
-}
-
-/* A temporary readout, while the fill control is under investigation. It is
-   deliberately plain: it is instrumentation, not chrome. */
-.hudProbe {
-  padding: 0 var(--space-base);
-  color: var(--text-secondary);
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
-  white-space: nowrap;
 }
 
 .hudBadge {

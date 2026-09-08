@@ -171,6 +171,20 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
     }
 
     return () => {
+      /*
+       * Tell the screen it is going away, before taking it away.
+       *
+       * Removing a script element does not stop what it started. An interval,
+       * a rAF loop, a ResizeObserver or a window listener created by the
+       * file's own code keeps running against a detached tree — and in
+       * StrictMode, where every mount is torn down and rebuilt, that happens
+       * on the very first render. The lab found it as a screen whose readings
+       * came from an element no longer on the page.
+       *
+       * There is no way to reach inside a script and stop it, so the screen is
+       * told and cleans up after itself, the same bargain as `lab:escape`.
+       */
+      body.dispatchEvent(new CustomEvent('lab:unmount'));
       for (const script of added) script.remove();
       root.textContent = '';
       const rest = { ...window.__labScreens };
@@ -189,11 +203,31 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
   useEffect(() => {
     const host = hostRef.current;
     const body = window.__labScreens?.[screenId] ?? host;
-    if (!body) return;
+    if (!body) return undefined;
     body.setAttribute('data-active', active ? 'true' : 'false');
     body.setAttribute('data-visible', visible ? 'true' : 'false');
-    body.style.setProperty('--frame-width', `${frameSize.width}px`);
-    body.style.setProperty('--frame-height', `${frameSize.height}px`);
+
+    /*
+     * The size comes from the screen's own box, not the frame's.
+     *
+     * They differ, and the difference matters: a frame keeps room for its
+     * scrollbar only once this screen's content overflows, which depends on
+     * the width the screen was given. So the frame reports the width it
+     * offered, and the screen ends up with about ten pixels less. A screen
+     * that lays out to the offered width overflows by exactly that much.
+     *
+     * Its own box is the answer after layout has settled, and observing it
+     * closes the loop: content appears, a scrollbar takes its width, the
+     * number corrects itself, and anything reading the property follows.
+     */
+    const write = () => {
+      body.style.setProperty('--frame-width', `${body.clientWidth || frameSize.width}px`);
+      body.style.setProperty('--frame-height', `${body.clientHeight || frameSize.height}px`);
+    };
+    write();
+    const ro = new ResizeObserver(write);
+    ro.observe(body);
+    return () => ro.disconnect();
   }, [active, visible, frameSize, screenId]);
 
   /**

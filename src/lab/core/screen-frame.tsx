@@ -28,8 +28,8 @@ export interface FrameProps {
   filling: boolean;
   /** Give this screen the window, or hand it back. */
   onToggleFill: (id: string) => void;
-  /** Instrumentation only, while the control is under investigation. */
-  onFillPress: () => void;
+  /** Double-clicking the label renames the screen, which writes the manifest. */
+  onRename: (id: string) => void;
 }
 
 /**
@@ -44,7 +44,7 @@ function ScreenFrameInner(props: FrameProps) {
   const {
     def, position, size, selected, active, dimmed, visible, zoom,
     readCanvas, onSelect, onLockIn, onDragStart, onResizeStart, registerEscape,
-    filling, onToggleFill, onFillPress,
+    filling, onToggleFill, onRename,
   } = props;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -206,6 +206,34 @@ function ScreenFrameInner(props: FrameProps) {
       </div>
 
       {/*
+        The label, anchored to the frame it names.
+
+        Its bottom-left corner sits on the frame's top-left corner and it
+        scales about that point, so it stays the same size on screen at every
+        zoom and never drifts from its frame — the spec's own description of
+        it, and the same reason the control beside it moved here. It was
+        placed imperatively from the camera, which meant it could be a frame
+        behind during an animation and could move under a press: a label is a
+        handle, so that cost a drag or a rename, not just a wrong position.
+      */}
+      <div
+        className={styles.label}
+        data-screen-id={def.id}
+        data-selected={selected || undefined}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onSelect(def.id);
+          // A label is a handle on its frame: dragging it moves the frame,
+          // which is how you grab a screen that fills the viewport and has no
+          // free edge to catch.
+          onDragStart(def.id, e);
+        }}
+        onDoubleClick={() => onRename(def.id)}
+      >
+        {def.name}
+      </div>
+
+      {/*
         The frame's own control, on the group for the same reason the handles
         are: the frame clips and contains its content.
 
@@ -225,7 +253,6 @@ function ScreenFrameInner(props: FrameProps) {
             ? 'Back to the frame (Shift F)'
             : 'Give this screen the whole window (Shift F)'}
           aria-label={filling ? 'Back to the frame' : 'Give this screen the whole window'}
-          onPointerDown={onFillPress}
           onClick={() => onToggleFill(def.id)}
         >
           <Icon name={filling ? 'minimize' : 'maximize'} size={14} strokeWidth={2} />

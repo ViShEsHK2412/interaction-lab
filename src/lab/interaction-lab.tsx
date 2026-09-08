@@ -192,7 +192,6 @@ export function InteractionLab() {
   const layerRef = useRef<HTMLDivElement | null>(null);
   const chromeRef = useRef<HTMLDivElement | null>(null);
   const rectRef = useRef<DOMRect>(new DOMRect(0, 0, 1, 1));
-  const labelsRef = useRef(new Map<string, HTMLElement>());
   const escapeRef = useRef(new Map<string, () => boolean>());
   const exploreCameraRef = useRef<Camera | null>(null);
   /** The frame's real size, held while fill mode borrows the window's. */
@@ -508,15 +507,6 @@ export function InteractionLab() {
     paintRulerRef.current?.();
     paintMeasureRef.current?.();
 
-    // Chrome is placed, not scaled: it lives outside the transformed layer, so
-    // it never stretches mid-gesture the way anything inside the layer does.
-    for (const [id, el] of labelsRef.current) {
-      const box = layoutRef.current[id];
-      if (!box) continue;
-      const x = (box.x + camera.x) * camera.z;
-      const y = (box.y + camera.y) * camera.z;
-      el.style.transform = `translate(${toDomPrecision(x)}px, ${toDomPrecision(y)}px)`;
-    }
 
     // Right-aligned to the frame, which means its position depends on the
     // frame's width *on screen*, not in page units.
@@ -656,20 +646,7 @@ export function InteractionLab() {
   const activeFrameRef = useRef<HTMLElement | null>(null);
 
   
-  /**
-   * A readout of what the fill control actually did.
-   *
-   * "It does not work" and "the click never arrived" look identical from the
-   * outside, and they need opposite fixes. This separates them: it counts the
-   * presses that reached the button and the clicks that reached the handler,
-   * and records the branch the handler took. If pressing it moves neither
-   * number, nothing is reaching the button at all and the problem is in front
-   * of it, not inside it.
-   */
-  const [probe, setProbe] = useState({
-    down: 0, click: 0, did: '—', up: '—', moved: 0, why: '—',
-  });
-
+  
   useEffect(() => {
     activeFrameRef.current = activeId
       ? layerRef.current?.querySelector<HTMLElement>(`[data-screen-id="${CSS.escape(activeId)}"]`) ?? null
@@ -1148,14 +1125,6 @@ export function InteractionLab() {
   }, [applyCamera, markMoved, recull, schedule, store]);
 
   
-  const labelCallback = useCallback((id: string) => (el: HTMLElement | null) => {
-    if (!el) { labelsRef.current.delete(id); return; }
-    labelsRef.current.set(id, el);
-    // Place it now. Chrome is positioned by the camera write, and refs attach
-    // after the first one has already run, so a label registering later would
-    // sit at its parked offscreen position until the camera next moved.
-    applyCamera(store.get(), false);
-  }, [applyCamera, store]);
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
 
@@ -1564,15 +1533,24 @@ export function InteractionLab() {
               onResizeStart={onResizeStart}
               registerEscape={registerEscape}
               filling={filling}
+              onRename={(id) => {
+                const target = SCREENS.find((sc) => sc.id === id);
+                if (!target || !ownsFolder(target)) return;
+                // Renames, per the spec's key map. The lock-in gesture is a
+                // double-click on the frame itself, a different target.
+                const next = window.prompt('Rename this screen', target.name);
+                if (!next || next === target.name) return;
+                void labFs.rename(target.dir, next).then((ok) => {
+                  if (!ok) { toast('Could not rename: no dev server', 'warn'); return; }
+                  location.reload();
+                });
+              }}
               onToggleFill={(id) => {
-                const did = modeRef.current === 'fill'
-                  ? 'exitFill'
-                  : `enterFill(${id})`;
-                setProbe((p) => ({ ...p, click: p.click + 1, did }));
+                // Refs, not this render's `mode`: a toggle that reads state one
+                // render late does the opposite thing, not nothing.
                 if (modeRef.current === 'fill') exitFill();
                 else enterFill(id);
               }}
-              onFillPress={() => setProbe((p) => ({ ...p, down: p.down + 1 }))}
             />
           );
         })}
@@ -1589,38 +1567,6 @@ export function InteractionLab() {
         <Toasts />
         <div ref={snapLayerRef} />
         <div className={styles.sizeBadge} ref={badgeRef} style={{ display: 'none' }} />
-
-        {SCREENS.map((def) => (
-          <div
-            key={def.id}
-            className={styles.label}
-            ref={labelCallback(def.id)}
-            data-screen-id={def.id}
-            data-selected={selected === def.id || undefined}
-            style={{ transform: 'translate(-9999px, -9999px)' }}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              select(def.id);
-              // A label is a handle on its frame: dragging it moves the frame,
-              // which is how you grab a screen that fills the viewport and has
-              // no free edge to catch.
-              onDragStart(def.id, e);
-            }}
-            onDoubleClick={() => {
-              // Renames, per the spec's key map. The lock-in gesture is a
-              // double-click on the frame itself, which is a different target.
-              if (!ownsFolder(def)) return;
-              const next = window.prompt('Rename this screen', def.name);
-              if (!next || next === def.name) return;
-              void labFs.rename(def.dir, next).then((ok) => {
-                if (!ok) { toast('Could not rename: no dev server', 'warn'); return; }
-                location.reload();
-              });
-            }}
-          >
-            {def.name}
-          </div>
-        ))}
 
         <div className={styles.hud}>
           <button
@@ -1639,13 +1585,7 @@ export function InteractionLab() {
                 <b>{activeName}</b>
                 {mode === 'fill' ? ' · filling · Esc for the frame' : ' · Esc to exit'}
               </span>
-              <span className={styles.hudDivider} />
-              <span className={styles.hudProbe} title="What the fill control did: presses that reached the button, clicks that reached the handler, and the branch it took">
-                {mode} · {activeId ?? 'none'} · down {probe.down} · click {probe.click}
-                {' · up '}{probe.up}{' · moved '}{probe.moved}{'px · '}{probe.why}
-                {' · '}{probe.did}
-              </span>
-
+              
             </>
           )}
           <span className={styles.hudDivider} />

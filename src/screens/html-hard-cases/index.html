@@ -364,10 +364,19 @@
      */
     if (window.ResizeObserver) {
       var settle = null;
-      new ResizeObserver(function () {
+      var ro = new ResizeObserver(function () {
         clearTimeout(settle);
         settle = setTimeout(run, 50);
-      }).observe(root);
+      });
+      ro.observe(root);
+      // Removing a script does not stop what it started, so the lab says when
+      // this screen is going away and the screen stops. Without it this
+      // observer outlives its own root and keeps reporting from a detached
+      // element — which is exactly how it was found.
+      root.addEventListener('lab:unmount', function () {
+        clearTimeout(settle);
+        ro.disconnect();
+      });
     }
   })();
   </script>
