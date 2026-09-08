@@ -699,7 +699,7 @@ export function InteractionLab() {
    * number, nothing is reaching the button at all and the problem is in front
    * of it, not inside it.
    */
-  const [probe, setProbe] = useState({ down: 0, click: 0, did: '—' });
+  const [probe, setProbe] = useState({ down: 0, click: 0, did: '—', up: '—', moved: 0 });
 
   useEffect(() => {
     activeFrameRef.current = activeId
@@ -1664,7 +1664,33 @@ export function InteractionLab() {
             aria-label={mode === 'fill'
               ? 'Back to the frame'
               : 'Give this screen the whole window'}
-            onPointerDown={() => setProbe((p) => ({ ...p, down: p.down + 1 }))}
+            onPointerDown={() => {
+              /*
+               * A click needs the press and the release on the same element.
+               * If the button moves between them, or the release lands
+               * somewhere else, the browser fires the click on whatever the
+               * two have in common — which is not this button, so its handler
+               * never runs. `down` climbing while `click` stays at zero is
+               * exactly that, so record where the release went and whether the
+               * button moved out from under it.
+               */
+              const el = playRef.current;
+              const before = el?.getBoundingClientRect();
+              const onUp = (ev: PointerEvent) => {
+                window.removeEventListener('pointerup', onUp, true);
+                const after = el?.getBoundingClientRect();
+                const t = ev.target as HTMLElement | null;
+                const moved = before && after
+                  ? Math.round(Math.hypot(after.left - before.left, after.top - before.top))
+                  : -1;
+                const name = t
+                  ? `${t.tagName.toLowerCase()}${t === el ? '(button)' : ''}`
+                  : 'nothing';
+                setProbe((p) => ({ ...p, up: name, moved }));
+              };
+              window.addEventListener('pointerup', onUp, true);
+              setProbe((p) => ({ ...p, down: p.down + 1 }));
+            }}
             onClick={() => {
               /*
                * Decided here, not inside the updater.
@@ -1719,7 +1745,8 @@ export function InteractionLab() {
               </span>
               <span className={styles.hudDivider} />
               <span className={styles.hudProbe} title="What the fill control did: presses that reached the button, clicks that reached the handler, and the branch it took">
-                {mode} · {activeId ?? 'none'} · down {probe.down} · click {probe.click} · {probe.did}
+                {mode} · {activeId ?? 'none'} · down {probe.down} · click {probe.click}
+                {' · up '}{probe.up}{' · moved '}{probe.moved}{'px · '}{probe.did}
               </span>
 
             </>
