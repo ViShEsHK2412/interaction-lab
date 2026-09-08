@@ -4,7 +4,6 @@ import {
   lerpCamera, MAX_ZOOM, MIN_ZOOM, pageToScreen, screenToPage, snapToDevicePixels,
   stepZoom, toDomPrecision, viewportCentre, visibleBounds, wheelZoom, zoomAbout,
   zoomToBounds, type Camera,
-  playButtonAt,
 } from './camera';
 
 const VIEWPORT = { width: 1200, height: 800 };
@@ -250,47 +249,5 @@ describe('createCameraStore', () => {
     off();
     store.set({ x: 0, y: 0, z: 3 });
     expect(calls).toBe(1);
-  });
-});
-
-describe('playButtonAt', () => {
-  const box = { x: 200, y: 300, width: 1440, height: 900 };
-
-  it('sits at the frame’s top-right corner in page space', () => {
-    const at = playButtonAt(box, { x: -200, y: -300, z: 1 }, null, 34);
-    // The frame's origin is at screen 0,0, so its right edge is its width.
-    expect(at.x).toBe(1440);
-  });
-
-  it('follows the zoom, because the corner is a screen position', () => {
-    const at = playButtonAt(box, { x: -200, y: -300, z: 0.5 }, null, 34);
-    expect(at.x).toBe(720);
-  });
-
-  it('tucks inside when the frame’s top is above the reach', () => {
-    const at = playButtonAt(box, { x: -200, y: -300, z: 1 }, null, 34);
-    expect(at.inside).toBe(true);
-    expect(at.y).toBe(34);
-  });
-
-  it('hangs above the frame when there is room', () => {
-    const at = playButtonAt(box, { x: -200, y: -200, z: 1 }, null, 34);
-    expect(at.inside).toBe(false);
-    expect(at.y).toBe(100);
-  });
-
-  it('uses the window, not the layout, while filling', () => {
-    // The bug: a 1440-wide frame filling a 1262-wide window put the button at
-    // 1440 — off the right edge, where it could not be clicked. Entering fill
-    // worked and leaving it did not.
-    const at = playButtonAt(box, { x: -200, y: -300, z: 1 }, { width: 1262, height: 624 }, 34);
-    expect(at.x).toBe(1262);
-    expect(at.y).toBe(34);
-    expect(at.inside).toBe(true);
-  });
-
-  it('stays inside a window wider than the frame too', () => {
-    const at = playButtonAt(box, { x: -200, y: -300, z: 1 }, { width: 1920, height: 1080 }, 34);
-    expect(at.x).toBe(1920);
   });
 });

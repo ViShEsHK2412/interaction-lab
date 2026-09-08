@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  boundsOf, boxesIntersect, createCameraStore, lerpCamera, playButtonAt, screenToPage, stepZoom,
+  boundsOf, boxesIntersect, createCameraStore, lerpCamera, screenToPage, stepZoom,
   snapToDevicePixels, toDomPrecision, viewportCentre, visibleBounds, zoomAbout,
   zoomToBounds, type Box, type Camera,
 } from './core/camera';
@@ -526,27 +526,33 @@ export function InteractionLab() {
 
     // Right-aligned to the frame, which means its position depends on the
     // frame's width *on screen*, not in page units.
+    /*
+     * The frame's own control, placed from the frame's own box.
+     *
+     * This used to be arithmetic: take the frame's page rectangle, apply the
+     * camera, and hope the two agree. They do not always. Fill renders the
+     * frame at the window's size while the layout still describes its own;
+     * a resize writes the DOM before it writes state; an animation moves the
+     * camera between the read and the write. Every one of those put the button
+     * somewhere the frame was not, and one of them put it off the side of the
+     * window entirely, where a click cannot land and the only way out of fill
+     * was a shortcut.
+     *
+     * Asking the element where it is cannot disagree with where it is. One
+     * rect read, only while a screen is focused or filling — which is the only
+     * time this button exists, and never during a pan or a wheel.
+     */
     const play = playRef.current;
-    const focused = activeIdRef.current ? layoutRef.current[activeIdRef.current] : null;
-    if (play && focused) {
-      /*
-       * Above the corner when there is room, inside it when there is not.
-       *
-       * The button hangs 30px above the frame's top edge, and focus mode fits
-       * the frame to the viewport, so in the ordinary case it sat at y = -30
-       * and could not be clicked at all. Only the shortcut worked, and only if
-       * you knew it. Below the threshold it tucks inside the frame instead,
-       * which is where Figma keeps this kind of chrome anyway.
-       *
-       * Filling is the other case the layout cannot answer: the frame is the
-       * window then, not its own width.
-       */
-      const fill = modeRef.current === 'fill' ? windowSizeRef.current : null;
-      const at = playButtonAt(focused, camera, fill, PLAY_REACH);
-      if (at.inside) play.dataset['inside'] = '';
+    const frame = activeFrameRef.current;
+    if (play && frame) {
+      const box = frame.getBoundingClientRect();
+      const root = rectRef.current;
+      const x = box.right - root.left;
+      const top = box.top - root.top;
+      if (top < PLAY_REACH) play.dataset['inside'] = '';
       else delete play.dataset['inside'];
       play.style.transform =
-        `translate(${toDomPrecision(at.x)}px, ${toDomPrecision(at.y)}px)`;
+        `translate(${toDomPrecision(x)}px, ${toDomPrecision(Math.max(top, PLAY_REACH))}px)`;
     }
   }, []);
 
@@ -679,6 +685,24 @@ export function InteractionLab() {
    */
   const windowSizeRef = useRef(windowSize);
   windowSizeRef.current = windowSize;
+
+  /** The focused frame's element, so its control can be placed from its box. */
+  const activeFrameRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    activeFrameRef.current = activeId
+      ? layerRef.current?.querySelector<HTMLElement>(`[data-screen-id="${CSS.escape(activeId)}"]`) ?? null
+      : null;
+    /*
+     * Place it after the commit, not during the camera write that caused it.
+     *
+     * Entering fill changes the frame's size through React, so the box the
+     * button is placed from does not exist yet when the camera moves. Without
+     * this the button keeps the focus-mode position for one paint, which is
+     * the paint you click in.
+     */
+    applyCamera(store.get(), false);
+  }, [activeId, applyCamera, mode, store, windowSize]);
 
   const enterFill = useCallback((id: string) => {
     const box = layoutRef.current[id];

@@ -31,8 +31,11 @@
  * of it can matter mid-gesture. Scoped to these two rules rather than set on
  * the body, since a body-wide toggle costs a whole-document recalc by itself.
  */
-.root[data-gesturing] .layer,
-.root[data-gesturing] .chrome { pointer-events: none; }
+/* Explore only. Locked into a screen there is no camera gesture to protect
+   against, and killing hit-testing there takes the app's own interactivity —
+   and this frame's own controls — with it. */
+.root[data-gesturing][data-mode='explore'] .layer,
+.root[data-gesturing][data-mode='explore'] .chrome { pointer-events: none; }
 
 /* The one transformed element. Everything on the canvas is inside it. */
 .layer {

@@ -224,32 +224,6 @@ export function toDomPrecision(v: number): number {
 
 // ── The store ───────────────────────────────────────────────────────────────
 
-/**
- * Where the frame's own control sits, in screen pixels.
- *
- * The button hangs off the frame's top-right corner, so its place depends on
- * where that corner is *on screen* — which is not always where the camera says
- * the layout puts it. In fill mode the frame is stretched to the viewport and
- * the camera is parked at its origin, so the corner is the viewport's own
- * top-right; deriving it from the layout width instead put the button past the
- * right edge of a window narrower than the frame, where it could not be
- * clicked. Entering fill worked and leaving it did not, unless you knew the
- * shortcut.
- *
- * `reach` is the least distance from the top of the viewport the button can
- * sit at. Above that it hangs over the frame; below it, it tucks inside.
- */
-export function playButtonAt(
-  box: Box,
-  camera: Camera,
-  fill: Size | null,
-  reach: number,
-): { x: number; y: number; inside: boolean } {
-  const right = fill ? fill.width : pageToScreen(box.x + box.width, camera.x, camera.z);
-  const top = fill ? 0 : pageToScreen(box.y, camera.y, camera.z);
-  return { x: right, y: Math.max(top, reach), inside: top < reach };
-}
-
 export interface CameraStore {
   get(): Camera;
   /** Write the value. Subscribers are notified synchronously; DOM work is theirs to schedule. */
