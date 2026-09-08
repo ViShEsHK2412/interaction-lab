@@ -1699,7 +1699,8 @@ export function InteractionLab() {
               // The three things that can put this element anywhere: its own
               // transform, the margin the threshold flips, and the box its
               // absolute position is resolved against.
-              const tBefore = el?.style.transform ?? '';
+              const tBefore = el ? getComputedStyle(el).transform : '';
+              const oBefore = el ? `${el.offsetLeft},${el.offsetTop}` : '';
               const mBefore = el ? getComputedStyle(el).marginTop : '';
               const pBefore = (el?.offsetParent as HTMLElement | null)?.getBoundingClientRect();
               const camBefore = store.get();
@@ -1729,15 +1730,23 @@ export function InteractionLab() {
                   ? Math.round(Math.hypot(
                     frameAfter.left - frameBefore.left, frameAfter.top - frameBefore.top))
                   : -1;
-                const tAfter = now?.style.transform ?? '';
+                const tAfter = now ? getComputedStyle(now).transform : '';
+                const oAfter = now ? `${now.offsetLeft},${now.offsetTop}` : '';
                 const mAfter = now ? getComputedStyle(now).marginTop : '';
                 const pAfter = (now?.offsetParent as HTMLElement | null)?.getBoundingClientRect();
                 const parentMoved = pBefore && pAfter
                   ? Math.round(Math.hypot(pAfter.left - pBefore.left, pAfter.top - pBefore.top))
                   : -1;
-                const why = `cam${camMoved} frame${frameMoved} parent${parentMoved}`
-                  + (tBefore === tAfter ? ' t=same' : ' t=CHANGED')
-                  + (mBefore === mAfter ? ` m=${mBefore}` : ` m=${mBefore}→${mAfter}`)
+                const dx = before && after ? Math.round(after.left - before.left) : 0;
+                const dy = before && after ? Math.round(after.top - before.top) : 0;
+                // The computed matrix, not the inline string: the string can
+                // be identical while `scale` or an animation changes what is
+                // actually applied.
+                const brief = (t: string) => t.replace(/matrix\(|\)/g, '').split(',').slice(4).join(',').trim();
+                const why = `d(${dx},${dy}) off ${oBefore}${oBefore === oAfter ? '' : `→${oAfter}`}`
+                  + ` tf ${brief(tBefore)}${tBefore === tAfter ? '' : `→${brief(tAfter)}`}`
+                  + (mBefore === mAfter ? ` m${mBefore}` : ` m${mBefore}→${mAfter}`)
+                  + ` cam${camMoved} frame${frameMoved} parent${parentMoved}`
                   + (now === el ? '' : ' REMOUNTED');
                 setProbe((p) => ({ ...p, up: name, moved, why }));
               };
