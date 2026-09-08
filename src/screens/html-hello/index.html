@@ -30,8 +30,11 @@
     }
     button:hover { border-color: var(--accent); }
     .count { font-variant-numeric: tabular-nums; color: var(--accent); font-size: 28px; }
-    /* Reads the contract straight off the screen root, in plain CSS. */
-    [data-active="true"] .badge { background: #14532d; color: #86efac; }
+    /* Reads the contract straight off the screen root, in plain CSS.
+       `body` is the screen's own root once the sheet is scoped, so state
+       carried on that root is written as `body[...]` rather than as a
+       descendant selector, which would look for it one level too deep. */
+    body[data-active="true"] .badge { background: #14532d; color: #86efac; }
     .badge {
       font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
       padding: 4px 10px; border-radius: 3px; background: #2a2f3a; color: #8b95a5;

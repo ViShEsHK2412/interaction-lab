@@ -18,7 +18,7 @@
       --edge: #232c39;
       --pad: 32px;
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; --only-mine: leaked; }
     html, body { height: 100%; }
     body {
       margin: 0;
@@ -163,8 +163,11 @@
       add('In the lab’s own document',
           'Not a shadow root and not an iframe. This is what lets one measuring pass reach every screen.',
           function () {
+            // `document` in here is the screen's scoped proxy, so comparing
+            // against it would always fail. window.document is the real one.
+            var real = window.document;
             var host = root.getRootNode();
-            return { ok: host === document, value: host === document ? 'document' : String(host) };
+            return { ok: host === real, value: host === real ? 'document' : String(host) };
           });
 
       add('document.getElementById reaches me',
@@ -224,24 +227,24 @@
       add('My CSS did not leak to the lab',
           'h1 { font-size: 26px } must not restyle the lab’s own chrome or another screen.',
           function () {
-            var probe = document.createElement('h1');
+            var probe = window.document.createElement('h1');
             probe.style.position = 'absolute';
             probe.style.visibility = 'hidden';
-            document.body.appendChild(probe);
+            window.document.body.appendChild(probe);
             var size = getComputedStyle(probe).fontSize;
             probe.remove();
             return { ok: size !== '26px', value: 'outside h1 is ' + size };
           });
 
       add('The universal selector stayed inside',
-          '* { box-sizing } is the most dangerous rule a prototype ships.',
+          '* { } is the most dangerous rule a prototype ships. The lab sets its own box-sizing, so this checks a property only my sheet sets.',
           function () {
-            var probe = document.createElement('div');
+            var probe = window.document.createElement('div');
             probe.style.position = 'absolute';
-            document.body.appendChild(probe);
-            var box = getComputedStyle(probe).boxSizing;
+            window.document.body.appendChild(probe);
+            var leaked = getComputedStyle(probe).getPropertyValue('--only-mine').trim();
             probe.remove();
-            return { ok: box !== 'border-box', value: 'outside box-sizing is ' + box };
+            return { ok: leaked === '', value: leaked === '' ? 'nothing leaked' : 'leaked ' + leaked };
           });
 
       add('@media block survived the rewrite',

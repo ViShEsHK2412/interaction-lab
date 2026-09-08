@@ -3,6 +3,7 @@ import {
   BODY_SCOPE, DEFAULT_HTML_SIZE, htmlScreenId, orderHtmlFiles,
   scopeCss, scopeSelectorList, tilePosition, titleFromSlug,
   usesInlineHandlers, wrapScript, firstFreeRow,
+  splitSelectorList, scopeFor, cssSuffix, renameKeyframes,
 } from './html-screens';
 
 /** Whitespace is free in CSS and the scoper adds some. Compare on shape. */
@@ -199,6 +200,97 @@ describe('wrapScript', () => {
   });
 });
 
+describe('splitSelectorList', () => {
+  it('splits an ordinary list', () => {
+    expect(splitSelectorList('a, b, c').map((s) => s.trim())).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps a comma inside :is() with its own selector', () => {
+    expect(splitSelectorList(':is(h1, h2) span').map((s) => s.trim()))
+      .toEqual([':is(h1, h2) span']);
+  });
+
+  it('keeps a comma inside :not() and nested parens', () => {
+    expect(splitSelectorList(':not(.a, .b), .c').map((s) => s.trim()))
+      .toEqual([':not(.a, .b)', '.c']);
+  });
+
+  it('keeps a comma inside an attribute value', () => {
+    expect(splitSelectorList('[title="a,b"], .c').map((s) => s.trim()))
+      .toEqual(['[title="a,b"]', '.c']);
+  });
+
+  it('is not confused by an escaped quote in an attribute value', () => {
+    expect(splitSelectorList('[t="a\\",b"], .c').length).toBe(2);
+  });
+
+  it('returns one entry for one selector', () => {
+    expect(splitSelectorList('.only')).toEqual(['.only']);
+  });
+});
+
+describe('scopeFor and cssSuffix', () => {
+  it('matches the screen id, not merely the attribute', () => {
+    expect(scopeFor('feed')).toBe('[data-lab-body="feed"]');
+  });
+
+  it('keeps a slash, which every variant id contains', () => {
+    expect(scopeFor('cards/soft')).toBe('[data-lab-body="cards/soft"]');
+  });
+
+  it('escapes a quote rather than ending the selector early', () => {
+    expect(scopeFor('a"b')).toBe('[data-lab-body="a\\"b"]');
+  });
+
+  it('reduces an id to something legal in an identifier', () => {
+    expect(cssSuffix('cards/soft')).toBe('cards-soft');
+    expect(cssSuffix('a b.c')).toBe('a-b-c');
+  });
+});
+
+describe('renameKeyframes', () => {
+  it('qualifies the declaration and the reference together', () => {
+    const out = renameKeyframes(
+      '@keyframes pulse { from { opacity: 0; } } .p { animation: pulse 1s infinite; }',
+      'scr',
+    );
+    expect(out).toContain('@keyframes pulse--scr');
+    expect(out).toContain('animation: pulse--scr 1s infinite');
+  });
+
+  it('follows animation-name as well as the shorthand', () => {
+    const out = renameKeyframes(
+      '@keyframes spin {} .a { animation-name: spin; }', 'scr',
+    );
+    expect(out).toContain('animation-name: spin--scr');
+  });
+
+  it('takes the -webkit- prefixed form', () => {
+    expect(renameKeyframes('@-webkit-keyframes fade {}', 'scr'))
+      .toContain('@-webkit-keyframes fade--scr');
+  });
+
+  it('leaves a sheet with no keyframes untouched', () => {
+    const css = '.a { color: red; }';
+    expect(renameKeyframes(css, 'scr')).toBe(css);
+  });
+
+  it('does not rename a property that merely shares the name', () => {
+    const out = renameKeyframes('@keyframes red {} .a { color: red; }', 'scr');
+    expect(out).toContain('color: red;');
+    expect(out).toContain('@keyframes red--scr');
+  });
+
+  it('renames every keyframes in a sheet', () => {
+    const out = renameKeyframes(
+      '@keyframes a {} @keyframes b {} .x { animation: a 1s; } .y { animation: b 2s; }',
+      'scr',
+    );
+    expect(out).toContain('animation: a--scr 1s');
+    expect(out).toContain('animation: b--scr 2s');
+  });
+});
+
 describe('scopeCss', () => {
   it('rewrites custom properties onto the screen root', () => {
     expect(tidy(scopeCss(':root { --bg: #000; }')))
@@ -305,6 +397,43 @@ describe('scopeCss', () => {
     expect(out).toContain(`${BODY_SCOPE} .card > .title`);
     expect(out).toContain('from { transform: rotate(0); }');
     expect(out).not.toMatch(/(^|[{;}])\s*html\s*[,{]/);
+  });
+
+  it('finds an at-rule that has a comment written above it', () => {
+    // The bug this exists for: the comment left the head starting with a
+    // slash, the anchored at-rule test missed, `@keyframes` was scoped like a
+    // selector, the block was dropped, and the animation referred to keyframes
+    // that no longer existed — so nothing animated and nothing could be frozen.
+    const out = scopeCss('/* a note */ @keyframes pulse { 0% { opacity: 0; } }');
+    expect(tidy(out)).toContain('@keyframes pulse { 0% { opacity: 0; } }');
+    expect(tidy(out)).not.toContain(`${BODY_SCOPE} @keyframes`);
+  });
+
+  it('finds @media when a comment is written above it', () => {
+    const out = tidy(scopeCss('/* note */ @media screen { h1 { color: red; } }'));
+    expect(out).toContain(`@media screen { ${BODY_SCOPE} h1`);
+  });
+
+  it('does not split :is() across the comma inside it', () => {
+    expect(tidy(scopeCss(':is(h1, h2) { color: red; }')))
+      .toBe(`${BODY_SCOPE} :is(h1, h2) { color: red; }`);
+  });
+
+  it('consumes html and body together when they stack', () => {
+    expect(tidy(scopeCss('html body { margin: 0; }')))
+      .toBe(`${BODY_SCOPE} { margin: 0; }`);
+    expect(tidy(scopeCss('html > body { margin: 0; }')))
+      .toBe(`${BODY_SCOPE} { margin: 0; }`);
+  });
+
+  it('keeps what qualifies a stacked root', () => {
+    expect(tidy(scopeCss('html.dark body.themed { color: red; }')))
+      .toBe(`${BODY_SCOPE}.dark.themed { color: red; }`);
+  });
+
+  it('keeps a descendant of body a descendant', () => {
+    expect(tidy(scopeCss('body .card { color: red; }')))
+      .toBe(`${BODY_SCOPE} .card { color: red; }`);
   });
 
   it('takes a custom scope, so two screens could be told apart', () => {

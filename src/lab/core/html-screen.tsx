@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useScreen } from '../screen-context';
 import {
-  BODY_ATTR, parseHtmlDocument, scopeCss, usesInlineHandlers, wrapScript,
+  BODY_ATTR, cssSuffix, parseHtmlDocument, renameKeyframes, scopeCss, scopeFor,
+  usesInlineHandlers, wrapScript,
 } from './html-screens';
 
 /**
@@ -96,7 +97,10 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
     // this, and the file's `<body class>` lands on it, so a prototype that
     // themes itself with a body class still themes itself.
     const body = document.createElement('div');
-    body.setAttribute(BODY_ATTR, '');
+    // The id, not an empty marker: every screen carries this attribute, so a
+    // stylesheet scoped to the bare attribute is scoped to every screen at
+    // once and the last one mounted wins every token.
+    body.setAttribute(BODY_ATTR, screenId);
     /*
      * Fill the frame.
      *
@@ -113,7 +117,9 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
     for (const sheet of parsed.styles) {
       if (sheet.kind === 'text') {
         const style = document.createElement('style');
-        style.textContent = isolate ? sheet.value : scopeCss(sheet.value);
+        style.textContent = isolate
+          ? sheet.value
+          : renameKeyframes(scopeCss(sheet.value, scopeFor(screenId)), cssSuffix(screenId));
         root.appendChild(style);
       } else {
         // A stylesheet the file links out to. Left alone: rewriting a remote

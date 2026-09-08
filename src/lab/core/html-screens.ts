@@ -110,6 +110,23 @@ export function orderHtmlFiles(files: readonly string[]): string[] {
 export const BODY_ATTR = 'data-lab-body';
 export const BODY_SCOPE = `[${BODY_ATTR}]`;
 
+/**
+ * The selector for one screen's root.
+ *
+ * Every screen carries the same attribute, so scoping them all to
+ * `[data-lab-body]` scopes them to *each other*: one screen's `:root` tokens
+ * land on every screen's root, and the last stylesheet to load wins. The
+ * attribute carries the screen's id and the selector matches on it.
+ */
+export function scopeFor(screenId: string): string {
+  return `[${BODY_ATTR}="${screenId.replace(/["\\]/g, '\\$&')}"]`;
+}
+
+/** A screen id, reduced to something legal in a CSS identifier. */
+export function cssSuffix(screenId: string): string {
+  return screenId.replace(/[^\w-]+/g, '-');
+}
+
 /** At-rules whose contents are not selectors and must be copied untouched. */
 const VERBATIM_AT = /^@(keyframes|-webkit-keyframes|font-face|property|counter-style|page|import|charset|namespace|font-feature-values)\b/i;
 /** At-rules that wrap ordinary rules, so their contents still need scoping. */
@@ -125,9 +142,43 @@ const NESTED_AT = /^@(media|supports|container|layer|scope)\b/i;
  * almost always declared on `:root`, land nowhere and every colour in the file
  * falls back to its initial value.
  */
+/**
+ * Split a selector list on its own commas.
+ *
+ * `:is(h1, h2)` holds a comma that belongs to the `:is`, and splitting on it
+ * produces `:is(h1` and `h2)` — two selectors, both nonsense, and the rule is
+ * dropped. The same goes for a comma inside `[title="a,b"]`.
+ */
+export function splitSelectorList(selectors: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let quote: string | null = null;
+
+  for (let i = 0; i < selectors.length; i += 1) {
+    const c = selectors[i];
+    if (quote) {
+      if (c === '\\') i += 1;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") quote = c;
+    else if (c === '(' || c === '[') depth += 1;
+    else if (c === ')' || c === ']') depth = Math.max(0, depth - 1);
+    else if (c === ',' && depth === 0) {
+      out.push(selectors.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(selectors.slice(start));
+  return out;
+}
+
+/** The head of a selector, when that head is the document root. */
+const ROOT_HEAD = /^(?::root|html|body)(?![\w-])((?:\.[\w-]+|#[\w-]+|\[[^\]]*\]|:{1,2}[\w-]+(?:\([^)]*\))?)*)/;
+
 export function scopeSelectorList(selectors: string, scope = BODY_SCOPE): string {
-  return selectors
-    .split(',')
+  return splitSelectorList(selectors)
     .map((raw) => {
       // A comment is legal inside a selector and means nothing there, but it
       // would sit in front of the `body` this function is looking for and stop
@@ -138,13 +189,28 @@ export function scopeSelectorList(selectors: string, scope = BODY_SCOPE): string
       // A rule already written against the scope needs no second one.
       if (sel.startsWith(scope)) return ' ' + sel;
 
-      // `body`, `html` and `:root` at the head of a selector are the document
-      // root, which is this screen's root.
-      const rooted = sel.replace(
-        /^(?::root|html|body)(?![\w-])/,
-        scope,
-      );
-      if (rooted !== sel) return ' ' + rooted;
+      /*
+       * `body`, `html` and `:root` at the head of a selector are the document
+       * root, which is this screen's root.
+       *
+       * They can also stack: `html body` and `html > body` both name the same
+       * one element, and rewriting only the first leaves a `body` descendant
+       * that can never match, so the whole run is consumed together.
+       */
+      let head = ROOT_HEAD.exec(sel);
+      if (head) {
+        let rest = sel.slice(head[0].length);
+        let suffix = head[1] ?? '';
+        for (;;) {
+          const next = /^\s*>?\s*(?::root|html|body)(?![\w-])((?:\.[\w-]+|#[\w-]+|\[[^\]]*\]|:{1,2}[\w-]+(?:\([^)]*\))?)*)/
+            .exec(rest);
+          if (!next) break;
+          suffix += next[1] ?? '';
+          rest = rest.slice(next[0].length);
+        }
+        return ' ' + scope + suffix + rest;
+      }
+      head = null;
 
       // A bare `*` would otherwise reach out of the screen entirely.
       return ' ' + scope + ' ' + sel;
@@ -218,7 +284,18 @@ export function scopeCss(css: string, scope = BODY_SCOPE): string {
       continue;
     }
 
-    const trimmed = head.trim();
+    /*
+     * Comments come off before the at-rule test.
+     *
+     * `VERBATIM_AT` is anchored, and the head runs from the end of the last
+     * rule, so a comment written above `@keyframes` — which is where anyone
+     * would write one — left the head starting with slash-star. The at-rule
+     * was not recognised, `@keyframes` was scoped as though it were a
+     * selector, and the whole block was dropped by the parser. The animation
+     * then referred to keyframes that did not exist, so no animation was
+     * created at all and there was nothing for a freeze to pause.
+     */
+    const trimmed = stripComments(head).trim();
 
     if (VERBATIM_AT.test(trimmed)) {
       const end = block(j);
@@ -252,6 +329,47 @@ export function scopeCss(css: string, scope = BODY_SCOPE): string {
     i = end;
   }
 
+  return out;
+}
+
+/** Comments carry no meaning outside a string, and hide the text that does. */
+function stripComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/**
+ * Give a screen's keyframes a name of their own.
+ *
+ * `@keyframes` is document-global whatever selector its rules carry, so two
+ * variants of one file both declaring `@keyframes pulse` collide: the last one
+ * mounted defines it for both, and the difference you were comparing quietly
+ * disappears. That is the exact case this canvas exists for, so the names are
+ * qualified per screen and the declarations that reference them follow.
+ */
+export function renameKeyframes(css: string, suffix: string): string {
+  const names = new Set<string>();
+  const declaration = /@(?:-webkit-)?keyframes\s+("[^"]*"|'[^']*'|[\w-]+)/g;
+  for (const match of css.matchAll(declaration)) {
+    const raw = match[1] ?? '';
+    names.add(raw.replace(/^['"]|['"]$/g, ''));
+  }
+  if (names.size === 0) return css;
+
+  let out = css;
+  for (const name of names) {
+    if (!/^[\w-]+$/.test(name)) continue;
+    const renamed = `${name}--${suffix}`;
+    // The declaration itself.
+    out = out.replace(
+      new RegExp(`(@(?:-webkit-)?keyframes\\s+)${name}\\b`, 'g'),
+      `$1${renamed}`,
+    );
+    // And every animation that asks for it by name.
+    out = out.replace(
+      new RegExp(`(animation(?:-name)?\\s*:[^;{}]*?)\\b${name}\\b`, 'g'),
+      `$1${renamed}`,
+    );
+  }
   return out;
 }
 
