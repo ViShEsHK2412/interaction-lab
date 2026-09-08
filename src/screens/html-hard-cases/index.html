@@ -194,7 +194,7 @@
           });
 
       add('--frame-width matches my real width',
-          'Sizes come from the frame, never from window.innerWidth.',
+          'Sizes come from the frame, never from window.innerWidth. It changes: a scrollbar appears only once the content overflows, so the usable width is a second pass and a screen has to follow it rather than read it once.',
           function () {
             var declared = parseFloat(getComputedStyle(root).getPropertyValue('--frame-width'));
             var real = root.clientWidth;
@@ -260,7 +260,14 @@
           function () {
             var el = document.getElementById('pulser');
             var r = el.getBoundingClientRect();
-            var hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            // Viewport coordinates: a screen parked off the side of the canvas
+            // has nothing under the point, which says nothing about whether
+            // hit-testing reaches in. Not a failure — an untestable position.
+            if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) {
+              return { ok: true, value: 'off-screen; pan to it and re-run' };
+            }
+            var hit = document.elementFromPoint(cx, cy);
             if (!hit) return { ok: false, value: 'nothing under the point' };
             var inside = root.contains(hit);
             var shielded = !inside && /shield/i.test(hit.className || '');
@@ -344,9 +351,24 @@
     });
 
     run();
-    // The frame delivers its size after the refs are in place, so the first
-    // width reading can be a frame behind. Re-run once it has landed.
-    requestAnimationFrame(function () { requestAnimationFrame(run); });
+
+    /*
+     * Re-run whenever the frame changes size.
+     *
+     * The usable width is genuinely a second pass: the frame keeps room for a
+     * scrollbar only once this screen's own content overflows, which depends
+     * on the width it is laying out into. So the first value a screen reads is
+     * the frame before it had a scrollbar, and the contract corrects it a beat
+     * later. Reading `--frame-width` once and trusting it is the mistake; this
+     * is what following it looks like.
+     */
+    if (window.ResizeObserver) {
+      var settle = null;
+      new ResizeObserver(function () {
+        clearTimeout(settle);
+        settle = setTimeout(run, 50);
+      }).observe(root);
+    }
   })();
   </script>
 </body>

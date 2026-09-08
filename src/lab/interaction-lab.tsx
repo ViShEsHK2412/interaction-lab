@@ -691,6 +691,18 @@ export function InteractionLab() {
     const size = { width: window.innerWidth, height: window.innerHeight };
     windowSizeRef.current = size;
     setWindowSize(size);
+    /*
+     * Take the camera off whatever is driving it first.
+     *
+     * Locking in starts a 320ms animation, and this is a jump, not another
+     * animation — so a fill entered before that settled was overwritten on the
+     * animation's very next frame, which then went on easing towards the
+     * camera focus had asked for. The screen lurched to the fill position and
+     * slid back, mode stuck at 'fill' with the camera somewhere else entirely:
+     * a bounce, and nothing to show for the click. Every other direct write to
+     * the camera already cancels first; this one did not.
+     */
+    cancelAnimationFrame(animRef.current);
     store.set({ x: -box.x, y: -box.y, z: 1 });
   }, [store]);
 

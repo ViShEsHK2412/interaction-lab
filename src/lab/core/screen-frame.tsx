@@ -53,6 +53,19 @@ function ScreenFrameInner(props: FrameProps) {
   const scrollCallback = useCallback((el: HTMLDivElement | null) => {
     scrollRef.current = el;
     if (!el) return undefined;
+    /*
+     * Measure once, synchronously, before waiting on the observer.
+     *
+     * The initial state is the frame's *layout* size, which is not the size a
+     * screen has to lay out in: a scrolling frame keeps ten pixels or so for
+     * its scrollbar. A screen that read `frameSize` on its first paint — which
+     * is the moment anything measuring itself reads it — got a width wider
+     * than the space it had, and laid out into an overflow. `clientWidth`
+     * excludes the scrollbar and is available the instant the ref attaches.
+     */
+    if (el.clientWidth > 0 && el.clientHeight > 0) {
+      setMeasured({ width: el.clientWidth, height: el.clientHeight });
+    }
     const ro = new ResizeObserver((entries) => {
       const box = entries[0]?.contentRect;
       // A zero box is a culled frame, not a real measurement. Building
