@@ -352,7 +352,8 @@ describe('scopeCss', () => {
     // Without stripping the comment, this `body` becomes a descendant
     // selector that can never match, and the file loses its theme.
     const out = tidy(scopeCss('.a, /* note */ body { color: red; }'));
-    expect(out).toBe(`${BODY_SCOPE} .a, ${BODY_SCOPE} { color: red; }`);
+    // The comment is kept, ahead of the rule rather than inside its selector.
+    expect(out).toBe(`/* note */ ${BODY_SCOPE} .a, ${BODY_SCOPE} { color: red; }`);
   });
 
   it('survives an unterminated block rather than throwing', () => {
@@ -407,6 +408,34 @@ describe('scopeCss', () => {
     const out = scopeCss('/* a note */ @keyframes pulse { 0% { opacity: 0; } }');
     expect(tidy(out)).toContain('@keyframes pulse { 0% { opacity: 0; } }');
     expect(tidy(out)).not.toContain(`${BODY_SCOPE} @keyframes`);
+  });
+
+  it('does not split a comment that contains a comma', () => {
+    // The bug: prose has commas. Splitting the head on them tore the comment
+    // in half, scoped each half as a selector, and left the rule that followed
+    // inside broken syntax — a whole stylesheet lost to one comma in a
+    // sentence.
+    const out = scopeCss('/* tokens, as always */ :root { --a: 1px; }');
+    expect(tidy(out)).toContain(`${BODY_SCOPE} { --a: 1px; }`);
+    expect(tidy(out)).not.toContain(`, ${BODY_SCOPE} as always`);
+  });
+
+  it('keeps the comment, ahead of the rule it described', () => {
+    const out = scopeCss('/* a note, with a comma */ h1 { color: red; }');
+    expect(out).toContain('/* a note, with a comma */');
+    expect(tidy(out)).toContain(`${BODY_SCOPE} h1 { color: red; }`);
+  });
+
+  it('handles a comment with a comma in front of a selector list', () => {
+    const out = tidy(scopeCss('/* one, two */ .a, .b { color: red; }'));
+    expect(out).toContain(`${BODY_SCOPE} .a, ${BODY_SCOPE} .b`);
+  });
+
+  it('scopes a rule keyed on the root’s own state', () => {
+    // `body[data-active]` is the idiom for reading the contract in CSS: the
+    // attribute is on the screen root, not on a descendant of it.
+    expect(tidy(scopeCss('body[data-active="true"] .badge { color: red; }')))
+      .toBe(`${BODY_SCOPE}[data-active="true"] .badge { color: red; }`);
   });
 
   it('finds @media when a comment is written above it', () => {

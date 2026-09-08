@@ -322,10 +322,24 @@ export function scopeCss(css: string, scope = BODY_SCOPE): string {
     }
 
     const end = block(j);
+    /*
+     * Comments come out of the selector before it is split.
+     *
+     * A comment sitting above a rule is part of the head, and prose contains
+     * commas: splitting on them tore the comment in half, scoped each half as
+     * though it were a selector, and left the rule that followed inside broken
+     * syntax for the parser to discard. A whole stylesheet can go that way
+     * from one comma in one sentence.
+     *
+     * They are re-emitted ahead of the rule, where they are still valid CSS
+     * and still say what they came to say.
+     */
+    const notes = head.match(/\/\*[\s\S]*?\*\//g);
+    const selectors = scopeSelectorList(stripComments(head), scope);
     // One space before the brace: the rewrite trims each selector, and a
     // sheet that reads `h1{...}` in devtools is harder to scan than it needs
     // to be for no gain.
-    out += scopeSelectorList(head, scope) + ' ' + css.slice(j, end);
+    out += (notes ? notes.join('\n') + '\n' : '') + selectors + ' ' + css.slice(j, end);
     i = end;
   }
 
