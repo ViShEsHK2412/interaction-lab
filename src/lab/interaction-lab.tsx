@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  boundsOf, boxesIntersect, createCameraStore, lerpCamera, screenToPage, stepZoom,
+  boundsOf, boxesIntersect, createCameraStore, lerpCamera, playButtonAt, screenToPage, stepZoom,
   snapToDevicePixels, toDomPrecision, viewportCentre, visibleBounds, zoomAbout,
   zoomToBounds, type Box, type Camera,
 } from './core/camera';
@@ -529,8 +529,6 @@ export function InteractionLab() {
     const play = playRef.current;
     const focused = activeIdRef.current ? layoutRef.current[activeIdRef.current] : null;
     if (play && focused) {
-      const x = (focused.x + focused.width + camera.x) * camera.z;
-      const y = (focused.y + camera.y) * camera.z;
       /*
        * Above the corner when there is room, inside it when there is not.
        *
@@ -539,10 +537,16 @@ export function InteractionLab() {
        * and could not be clicked at all. Only the shortcut worked, and only if
        * you knew it. Below the threshold it tucks inside the frame instead,
        * which is where Figma keeps this kind of chrome anyway.
+       *
+       * Filling is the other case the layout cannot answer: the frame is the
+       * window then, not its own width.
        */
-      if (y >= PLAY_REACH) delete play.dataset['inside'];
-      else play.dataset['inside'] = '';
-      play.style.transform = `translate(${toDomPrecision(x)}px, ${toDomPrecision(Math.max(y, PLAY_REACH))}px)`;
+      const fill = modeRef.current === 'fill' ? windowSizeRef.current : null;
+      const at = playButtonAt(focused, camera, fill, PLAY_REACH);
+      if (at.inside) play.dataset['inside'] = '';
+      else delete play.dataset['inside'];
+      play.style.transform =
+        `translate(${toDomPrecision(at.x)}px, ${toDomPrecision(at.y)}px)`;
     }
   }, []);
 
@@ -666,6 +670,16 @@ export function InteractionLab() {
    * the transform is a bare translate, which rides the cheap layer-move path
    * rather than re-rasterising every frame.
    */
+  /*
+   * The window's size, while a screen is filling it.
+   *
+   * A ref as well as state: `applyCamera` runs from the camera subscription,
+   * outside any render, so it cannot read the state variable and see anything
+   * but the value captured when it was created.
+   */
+  const windowSizeRef = useRef(windowSize);
+  windowSizeRef.current = windowSize;
+
   const enterFill = useCallback((id: string) => {
     const box = layoutRef.current[id];
     if (!box) return;
@@ -674,9 +688,30 @@ export function InteractionLab() {
     select(id);
     goActive(id);
     goMode('fill');
-    setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    const size = { width: window.innerWidth, height: window.innerHeight };
+    windowSizeRef.current = size;
+    setWindowSize(size);
     store.set({ x: -box.x, y: -box.y, z: 1 });
   }, [store]);
+
+  /*
+   * Filling means "be the window", and a window can change size.
+   *
+   * Without this the frame keeps whatever the window measured at the moment
+   * fill was entered, so resizing while filled leaves a screen that no longer
+   * fills anything, with a strip of canvas down one side.
+   */
+  useEffect(() => {
+    if (mode !== 'fill') return undefined;
+    const onResize = () => {
+      const size = { width: window.innerWidth, height: window.innerHeight };
+      windowSizeRef.current = size;
+      setWindowSize(size);
+      applyCamera(store.get(), false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [applyCamera, mode, store]);
 
   const exitFill = useCallback(() => {
     goMode('focus');
