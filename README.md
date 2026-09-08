@@ -158,7 +158,15 @@ vanilla JS can both reach them:
 | `data-visible` | `"false"` when culled offscreen |
 | `--frame-width`, `--frame-height` | the frame's size, in page units |
 | `lab:escape` event | cancel it to keep Escape; the lab exits otherwise |
+| `lab:unmount` event | the screen is going away: stop your timers, loops and observers |
 | `window.__labScreens[id]` | every mounted screen's root, for a test driver |
+
+Removing a script does not stop what it started, so a screen that runs a loop,
+an interval or an observer has to stop it on `lab:unmount`. Nothing else can:
+the lab cannot reach inside a script it executed. A screen that ignores this
+keeps running against a detached tree after it is replaced — and every mount is
+torn down and rebuilt once in development, so it happens immediately rather
+than rarely.
 
 `window.__lab` is deliberately left alone: a prototype that instruments itself
 for a Playwright driver almost always claims that name for its own readouts,
