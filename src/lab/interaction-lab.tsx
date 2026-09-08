@@ -79,12 +79,6 @@ const NUDGE_COMMIT_MS = 400;
 /** Space left between frames when they are tidied into a row. */
 const CLEANUP_GAP = 200;
 
-/**
- * How far below the top of the viewport the focused frame's edge has to be
- * before the fill toggle can hang above it. 30px of button and margin, plus the
- * 4px the selection ring reaches.
- */
-const PLAY_REACH = 34;
 
 /**
  * Three modes, and Escape walks back one at a time.
@@ -526,34 +520,6 @@ export function InteractionLab() {
 
     // Right-aligned to the frame, which means its position depends on the
     // frame's width *on screen*, not in page units.
-    /*
-     * The frame's own control, placed from the frame's own box.
-     *
-     * This used to be arithmetic: take the frame's page rectangle, apply the
-     * camera, and hope the two agree. They do not always. Fill renders the
-     * frame at the window's size while the layout still describes its own;
-     * a resize writes the DOM before it writes state; an animation moves the
-     * camera between the read and the write. Every one of those put the button
-     * somewhere the frame was not, and one of them put it off the side of the
-     * window entirely, where a click cannot land and the only way out of fill
-     * was a shortcut.
-     *
-     * Asking the element where it is cannot disagree with where it is. One
-     * rect read, only while a screen is focused or filling — which is the only
-     * time this button exists, and never during a pan or a wheel.
-     */
-    const play = playRef.current;
-    const frame = activeFrameRef.current;
-    if (play && frame && !playHeldRef.current) {
-      const box = frame.getBoundingClientRect();
-      const root = rectRef.current;
-      const x = box.right - root.left;
-      const top = box.top - root.top;
-      if (top < PLAY_REACH) play.dataset['inside'] = '';
-      else delete play.dataset['inside'];
-      play.style.transform =
-        `translate(${toDomPrecision(x)}px, ${toDomPrecision(Math.max(top, PLAY_REACH))}px)`;
-    }
   }, []);
 
   const schedule = useCallback((c: Camera) => {
@@ -689,23 +655,7 @@ export function InteractionLab() {
   /** The focused frame's element, so its control can be placed from its box. */
   const activeFrameRef = useRef<HTMLElement | null>(null);
 
-  /**
-   * Held down right now, and therefore not to be moved.
-   *
-   * A click only exists if the press and the release land on the same element.
-   * This button is placed imperatively on every camera write, and it has a
-   * threshold in it — above the frame's corner when there is room, tucked
-   * inside when there is not — so a frame sitting near that threshold could
-   * flip the button 34px mid-press. The release then landed on whatever was
-   * behind it, no click was ever formed, and the button looked dead while the
-   * shortcut it duplicates kept working.
-   *
-   * Nothing repositions a control while it is being pressed. That is true
-   * whatever moved underneath it, which is why this is the fix rather than
-   * chasing the particular cause.
-   */
-  const playHeldRef = useRef(false);
-
+  
   /**
    * A readout of what the fill control actually did.
    *
@@ -1197,16 +1147,7 @@ export function InteractionLab() {
     });
   }, [applyCamera, markMoved, recull, schedule, store]);
 
-  /**
-   * The play button, pinned above the focused frame's top-right corner.
-   *
-   * Screen-space chrome like the labels, and placed by the same camera write,
-   * because anything inside the transformed layer is part of its raster and
-   * visibly stretches mid-zoom. It is sized to the frame's width on screen so
-   * it right-aligns however far the canvas is zoomed.
-   */
-  const playRef = useRef<HTMLButtonElement | null>(null);
-
+  
   const labelCallback = useCallback((id: string) => (el: HTMLElement | null) => {
     if (!el) { labelsRef.current.delete(id); return; }
     labelsRef.current.set(id, el);
@@ -1622,6 +1563,16 @@ export function InteractionLab() {
               onDragStart={onDragStart}
               onResizeStart={onResizeStart}
               registerEscape={registerEscape}
+              filling={filling}
+              onToggleFill={(id) => {
+                const did = modeRef.current === 'fill'
+                  ? 'exitFill'
+                  : `enterFill(${id})`;
+                setProbe((p) => ({ ...p, click: p.click + 1, did }));
+                if (modeRef.current === 'fill') exitFill();
+                else enterFill(id);
+              }}
+              onFillPress={() => setProbe((p) => ({ ...p, down: p.down + 1 }))}
             />
           );
         })}
@@ -1670,128 +1621,6 @@ export function InteractionLab() {
             {def.name}
           </div>
         ))}
-
-        {mode !== 'explore' && (
-          <button
-            type="button"
-            className={styles.play}
-            ref={playRef}
-            data-screen-id={activeId ?? undefined}
-            title={mode === 'fill'
-              ? 'Back to the frame (Shift F)'
-              : 'Give this screen the whole window (Shift F)'}
-            aria-label={mode === 'fill'
-              ? 'Back to the frame'
-              : 'Give this screen the whole window'}
-            onPointerDown={() => {
-              /*
-               * A click needs the press and the release on the same element.
-               * If the button moves between them, or the release lands
-               * somewhere else, the browser fires the click on whatever the
-               * two have in common — which is not this button, so its handler
-               * never runs. `down` climbing while `click` stays at zero is
-               * exactly that, so record where the release went and whether the
-               * button moved out from under it.
-               */
-              playHeldRef.current = true;
-              const el = playRef.current;
-              const before = el?.getBoundingClientRect();
-              // The three things that can put this element anywhere: its own
-              // transform, the margin the threshold flips, and the box its
-              // absolute position is resolved against.
-              const tBefore = el ? getComputedStyle(el).transform : '';
-              const oBefore = el ? `${el.offsetLeft},${el.offsetTop}` : '';
-              const mBefore = el ? getComputedStyle(el).marginTop : '';
-              const pBefore = (el?.offsetParent as HTMLElement | null)?.getBoundingClientRect();
-              const camBefore = store.get();
-              const frameBefore = activeFrameRef.current?.getBoundingClientRect();
-              const onUp = (ev: PointerEvent) => {
-                window.removeEventListener('pointerup', onUp, true);
-                playHeldRef.current = false;
-                const now = playRef.current;
-                const after = now?.getBoundingClientRect();
-                const t = ev.target as HTMLElement | null;
-                const moved = before && after
-                  ? Math.round(Math.hypot(after.left - before.left, after.top - before.top))
-                  : -1;
-                const name = t
-                  ? `${t.tagName.toLowerCase()}${t === now ? '(button)' : ''}`
-                  : 'nothing';
-                /*
-                 * Which of the three things under the button moved: the
-                 * camera, the frame, or the element itself. They have
-                 * different causes and different fixes, and from the outside
-                 * they look the same.
-                 */
-                const cam = store.get();
-                const frameAfter = activeFrameRef.current?.getBoundingClientRect();
-                const camMoved = Math.round(Math.hypot(cam.x - camBefore.x, cam.y - camBefore.y));
-                const frameMoved = frameBefore && frameAfter
-                  ? Math.round(Math.hypot(
-                    frameAfter.left - frameBefore.left, frameAfter.top - frameBefore.top))
-                  : -1;
-                const tAfter = now ? getComputedStyle(now).transform : '';
-                const oAfter = now ? `${now.offsetLeft},${now.offsetTop}` : '';
-                const mAfter = now ? getComputedStyle(now).marginTop : '';
-                const pAfter = (now?.offsetParent as HTMLElement | null)?.getBoundingClientRect();
-                const parentMoved = pBefore && pAfter
-                  ? Math.round(Math.hypot(pAfter.left - pBefore.left, pAfter.top - pBefore.top))
-                  : -1;
-                const dx = before && after ? Math.round(after.left - before.left) : 0;
-                const dy = before && after ? Math.round(after.top - before.top) : 0;
-                // The computed matrix, not the inline string: the string can
-                // be identical while `scale` or an animation changes what is
-                // actually applied.
-                const brief = (t: string) => t.replace(/matrix\(|\)/g, '').split(',').slice(4).join(',').trim();
-                const why = `d(${dx},${dy}) off ${oBefore}${oBefore === oAfter ? '' : `→${oAfter}`}`
-                  + ` tf ${brief(tBefore)}${tBefore === tAfter ? '' : `→${brief(tAfter)}`}`
-                  + (mBefore === mAfter ? ` m${mBefore}` : ` m${mBefore}→${mAfter}`)
-                  + ` cam${camMoved} frame${frameMoved} parent${parentMoved}`
-                  + (now === el ? '' : ' REMOUNTED');
-                setProbe((p) => ({ ...p, up: name, moved, why }));
-              };
-              window.addEventListener('pointerup', onUp, true);
-              const release = () => {
-                playHeldRef.current = false;
-                window.removeEventListener('pointercancel', release, true);
-              };
-              window.addEventListener('pointercancel', release, true);
-              setProbe((p) => ({ ...p, down: p.down + 1 }));
-            }}
-            onClick={() => {
-              /*
-               * Decided here, not inside the updater.
-               *
-               * React runs a functional update when it processes the render,
-               * which is after this handler has finished — so a ref read in
-               * there reports the state the handler *produced*, not the state
-               * it decided from. The first version of this readout did exactly
-               * that and reported "exitFill" for a click that had just entered
-               * fill, which is the opposite of the truth.
-               */
-              const did = modeRef.current === 'fill'
-                ? 'exitFill'
-                : activeIdRef.current ? `enterFill(${activeIdRef.current})` : 'no active screen';
-              setProbe((p) => ({ ...p, click: p.click + 1, did }));
-              /*
-               * Refs, not the render's `mode` and `activeId`.
-               *
-               * This is the one handler in the file that read state out of
-               * the closure it was created in, and it is a toggle, so being
-               * one render behind does not do nothing — it does the opposite
-               * thing. Reading a stale 'fill' in focus mode called exitFill,
-               * which animates the camera back to the stored focus view and
-               * changes nothing else: the canvas slides and the screen never
-               * fills. The refs are updated in the same breath as the state
-               * for exactly this.
-               */
-              if (modeRef.current === 'fill') exitFill();
-              else if (activeIdRef.current) enterFill(activeIdRef.current);
-            }}
-          >
-            <Icon name={mode === 'fill' ? 'minimize' : 'maximize'} size={14} strokeWidth={2} />
-          </button>
-        )}
 
         <div className={styles.hud}>
           <button

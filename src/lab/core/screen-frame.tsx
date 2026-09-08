@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ScreenProvider, type ScreenState } from '../screen-context';
 import { HtmlScreen } from './html-screen';
+import { Icon } from './icons';
 import type { Handle } from './snapping';
 import type { ScreenDef } from '../screens';
 import styles from './lab.module.css';
@@ -23,6 +24,12 @@ export interface FrameProps {
   onDragStart: (id: string, e: React.PointerEvent) => void;
   onResizeStart: (id: string, handle: Handle, e: React.PointerEvent) => void;
   registerEscape: (id: string, fn: (() => boolean) | null) => void;
+  /** This screen is filling the window right now. */
+  filling: boolean;
+  /** Give this screen the window, or hand it back. */
+  onToggleFill: (id: string) => void;
+  /** Instrumentation only, while the control is under investigation. */
+  onFillPress: () => void;
 }
 
 /**
@@ -37,6 +44,7 @@ function ScreenFrameInner(props: FrameProps) {
   const {
     def, position, size, selected, active, dimmed, visible, zoom,
     readCanvas, onSelect, onLockIn, onDragStart, onResizeStart, registerEscape,
+    filling, onToggleFill, onFillPress,
   } = props;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -196,6 +204,33 @@ function ScreenFrameInner(props: FrameProps) {
 
         {dimmed && <div className={styles.dim} data-dim="" />}
       </div>
+
+      {/*
+        The frame's own control, on the group for the same reason the handles
+        are: the frame clips and contains its content.
+
+        It is positioned by CSS against the frame it belongs to, and kept at a
+        constant screen size by dividing through `--inv-zoom`, exactly like the
+        handles and the selection ring. It used to be placed imperatively on
+        every camera write, from arithmetic about where the frame ought to be —
+        which meant it could sit somewhere the frame was not, and could move
+        between a press and its release, so no click was ever formed. A control
+        anchored to its own frame in CSS cannot do either.
+      */}
+      {active && (
+        <button
+          type="button"
+          className={styles.play}
+          title={filling
+            ? 'Back to the frame (Shift F)'
+            : 'Give this screen the whole window (Shift F)'}
+          aria-label={filling ? 'Back to the frame' : 'Give this screen the whole window'}
+          onPointerDown={onFillPress}
+          onClick={() => onToggleFill(def.id)}
+        >
+          <Icon name={filling ? 'minimize' : 'maximize'} size={14} strokeWidth={2} />
+        </button>
+      )}
 
       {/*
         On the group, outside the frame. The frame clips and contains its

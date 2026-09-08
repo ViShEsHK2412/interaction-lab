@@ -547,43 +547,45 @@
  * so it is placed by the camera write rather than living in the layer, and it
  * stays the same size at every zoom.
  */
+/*
+ * The frame's own control, anchored to the frame.
+ *
+ * Pinned to the group's top-right corner by CSS, and scaled by `--inv-zoom`
+ * about that same corner so it stays 24px on screen at every zoom — the
+ * pattern the handles and the selection ring already use. The inset is applied
+ * before the scale, so it is 8px on screen rather than 8 page units.
+ *
+ * Nothing positions this from JavaScript. It cannot drift from the frame, and
+ * it cannot move between a press and its release.
+ */
 .play {
   position: absolute;
-  transform-origin: 100% 100%;
-  margin: -30px 0 0 -24px;       /* geometry: clears the frame's corner and ring */
+  top: 0;
+  right: 0;
   width: 24px;
   height: 24px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-control);
+  border-radius: 6px;
   background: var(--accent-solid);
   color: #fff;
   cursor: pointer;
   pointer-events: auto;
-  transition-property: background-color, scale;
+  transform-origin: 100% 0;
+  transform: scale(var(--inv-zoom, 1)) translate(-8px, 8px);
+  transition-property: background-color;
   transition-duration: 160ms;
   transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-/*
- * The visible button is 24px, which clears WCAG's floor but is small for a
- * pointer. The hit area is pushed out to 32px without moving any pixels.
- * Nothing else comes within 24px of it, so the two never overlap.
- */
+/* The hit area is pushed out without moving a pixel of the button. */
 .play::before {
   content: '';
   position: absolute;
-  inset: -4px;
+  inset: -6px;
 }
-
-/*
- * Tucked inside the frame when there was no room above it. The margin that
- * lifts it clear of the corner is what has to go; everything else stays, so
- * the button is the same button in both places.
- */
-.play[data-inside] { margin-top: 4px; }
 
 .play:hover { background: var(--accent-line); }
 .play:active { scale: 0.96; }
