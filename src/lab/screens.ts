@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type { ScreenManifest } from './screen-manifest';
+import { pages as externalPages, root as externalRoot } from 'virtual:lab-screens';
 import {
   DEFAULT_HTML_SIZE, firstFreeRow, htmlScreenId, orderHtmlFiles, tilePosition, titleFromSlug,
 } from './core/html-screens';
@@ -47,6 +48,14 @@ export interface ScreenDef {
    * canvas checks this before it offers to touch the disk.
    */
   solo: boolean;
+  /**
+   * This screen came from a folder outside the project.
+   *
+   * The lab can be pointed at any directory, and the work it finds there is
+   * not the lab's to move, copy or delete. File operations refuse rather than
+   * touch someone else's folder.
+   */
+  external: boolean;
 }
 
 const manifests = import.meta.glob<{ default: ScreenManifest }>(
@@ -162,6 +171,7 @@ function build(): ScreenDef[] {
         htmlFile: file,
         base: baseFor(dir),
         isolate: manifest.isolate === true,
+        external: false,
       });
     } else if (manifest.component) {
       out.push({
@@ -171,6 +181,7 @@ function build(): ScreenDef[] {
         htmlFile: null,
         base: baseFor(dir),
         isolate: true,
+        external: false,
       });
     }
   }
@@ -211,8 +222,47 @@ function build(): ScreenDef[] {
         // `document.getElementById`, which is how a prototype finds itself.
         isolate: false,
         solo,
+        external: false,
       });
     }
+  }
+
+  // ── A folder the lab was pointed at ────────────────────────────────────
+  /*
+   * Work that already exists, mounted where it lies.
+   *
+   * `npm run lab -- <folder>` puts every page in that folder on the canvas
+   * without copying anything into this repo. A folder of ten variants becomes
+   * ten frames side by side, which is the whole reason to want a canvas over a
+   * folder: they were only ever openable one at a time before.
+   */
+  const externalStart = firstFreeRow(out);
+  let externalTiles = 0;
+  for (const [rel, page] of Object.entries(externalPages)) {
+    const slug = rel.replace(/\.html?$/i, '');
+    const id = claim(slug, rel);
+    if (!id) continue;
+    const position = tilePosition(
+      externalTiles++, DEFAULT_HTML_SIZE, undefined, undefined, externalStart,
+    );
+    out.push({
+      id,
+      // The folder it sits in, relative to the root that was scanned. Only a
+      // label here: nothing is allowed to write to it.
+      dir: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : (externalRoot ?? ''),
+      name: titleFromSlug(rel.slice(rel.lastIndexOf('/') + 1)),
+      width: DEFAULT_HTML_SIZE.width,
+      height: DEFAULT_HTML_SIZE.height,
+      position,
+      defaultPosition: position,
+      component: null,
+      html: page.html,
+      htmlFile: rel,
+      base: page.base,
+      isolate: false,
+      solo: false,
+      external: true,
+    });
   }
 
   // Stable order, so the canvas and the Tab cycle do not reshuffle per reload.

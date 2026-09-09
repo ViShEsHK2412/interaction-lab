@@ -89,10 +89,18 @@ export function labScreens(): Plugin {
 
     config() {
       if (!root) return {};
-      // The folder is outside the project, so the dev server has to be told it
-      // may serve from there. Without this every page 403s and the canvas comes
-      // up empty with nothing on screen to say why.
-      return { server: { fs: { allow: [root] } } };
+      /*
+       * The folder is outside the project, so the dev server has to be told it
+       * may serve from there. Without this every page 403s and the canvas comes
+       * up empty with nothing on screen to say why.
+       *
+       * The project's own directory has to be named alongside it. Setting this
+       * from a plugin *replaces* the default allow list rather than adding to
+       * it, and the default is what lets Vite serve the project at all — so a
+       * list holding only the target folder locks the lab out of its own
+       * `index.html`, and every page 403s including the one you asked for.
+       */
+      return { server: { fs: { allow: [process.cwd(), root] } } };
     },
 
     configResolved() {
@@ -119,8 +127,14 @@ export function labScreens(): Plugin {
       const imports = found
         .map((p, i) => `import __p${i} from ${JSON.stringify(`/@fs/${p.abs}?raw`)};`)
         .join('\n');
+      // Each page carries the URL of its own folder, so the images and
+      // fonts sitting beside it still resolve once it is mounted elsewhere.
       const entries = found
-        .map((p, i) => `  ${JSON.stringify(p.rel)}: __p${i},`)
+        .map((p, i) => {
+          const dir = p.abs.slice(0, p.abs.lastIndexOf('/') + 1);
+          return `  ${JSON.stringify(p.rel)}: { html: __p${i}, `
+            + `base: ${JSON.stringify(`/@fs/${dir}`)} },`;
+        })
         .join('\n');
 
       return `${imports}

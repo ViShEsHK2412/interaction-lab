@@ -27,6 +27,7 @@ import {
   type Handle, type SnapLine,
 } from './core/snapping';
 import { SCREENS, type ScreenDef } from './screens';
+import { Overlays, toolsInstalled } from './tools/overlays';
 import { Icon } from './core/icons';
 import './core/theme.css';
 import styles from './core/lab.module.css';
@@ -42,6 +43,10 @@ import styles from './core/lab.module.css';
  * declines.
  */
 function ownsFolder(def: ScreenDef): boolean {
+  if (def.external) {
+    toast(`${def.name} lives outside this project. The lab will not write there.`, 'warn');
+    return false;
+  }
   if (def.solo) return true;
   toast(`${def.name} is one of several files in ${def.dir}/. Move it to its own folder first.`, 'warn');
   return false;
@@ -1564,6 +1569,12 @@ export function InteractionLab() {
       />
 
       <div className={styles.chrome} ref={chromeRef}>
+        {/*
+          Once, for the whole canvas. Every one of these tools works on a
+          document, and this is one document, so a single pass reaches every
+          screen — which is what measuring *between* two frames needs.
+        */}
+        <Overlays />
         <Toasts />
         <div ref={snapLayerRef} />
         <div className={styles.sizeBadge} ref={badgeRef} style={{ display: 'none' }} />
@@ -1586,6 +1597,17 @@ export function InteractionLab() {
                 {mode === 'fill' ? ' · filling · Esc for the frame' : ' · Esc to exit'}
               </span>
               
+            </>
+          )}
+          {toolsInstalled && zoomLabel !== 100 && (
+            <>
+              <span className={styles.hudDivider} />
+              <span
+                className={styles.hudBadge}
+                title="align-ui, agentation and interface-kit all read getBoundingClientRect, and the canvas scales the page. Shift 0 for 100%."
+              >
+                measurements read {zoomLabel}% of true
+              </span>
             </>
           )}
           <span className={styles.hudDivider} />

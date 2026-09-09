@@ -15,3 +15,6 @@ CLAUDE.md
 
 # The source prompt, kept locally.
 INTERACTION_LAB.md
+
+# Written by `npm run lab:tools`; the file is the switch.
+src/lab/tools/enabled.tsx

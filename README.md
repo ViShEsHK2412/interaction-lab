@@ -191,6 +191,58 @@ File operations target folders, so a screen that shares its folder with other
 variants cannot be duplicated, deleted or renamed — the lab says so rather
 than taking the other nine files with it.
 
+## Any folder, on the canvas
+
+```bash
+npm run lab -- ../work/Experiments/chapter-card-lab
+```
+
+Every page in that folder becomes a frame, and every page one level down as
+well. Ten variants that could only ever be opened one at a time are suddenly
+side by side, which is the entire reason to want a canvas instead of a folder.
+
+Nothing is copied and nothing is written. The folder is read, its files are
+served in place, and editing one of them hot-reloads that frame where it sits.
+Duplicate, delete and rename stay off: they are the lab's own screens only, and
+the lab will not touch work that lives somewhere else.
+
+A glob has to be a literal, so a folder chosen at startup cannot be one —
+`vite-plugin-lab-screens` scans it and writes the module the registry imports.
+It also has to name the project's own directory in `server.fs.allow` alongside
+the target: setting that from a plugin replaces the default rather than adding
+to it, and the default is what lets Vite serve the lab at all.
+
+## The four tools
+
+```bash
+npm run lab:tools           # install and mount
+npm run lab:tools -- --off  # unmount, keep the packages
+```
+
+agentation, interface-kit and dialkit mount **once, for the whole canvas** —
+each works on a document, and this is one document, which is what makes
+measuring *between* two frames possible at all. Per screen they would be four
+toolbars fighting over one click.
+
+It writes `src/lab/tools/enabled.tsx`, which is generated and out of git. That
+file is the switch; the mount finds it with a glob rather than an import,
+because a glob that matches nothing is an empty object while an import of a
+file that is not there is a build error.
+
+align-ui is separate, because it is a Vite plugin rather than a component:
+
+```ts
+import align from 'align-ui/vite';
+export default defineConfig({ plugins: [react(), labFs(), labScreens(), align()] });
+```
+
+Two things the HUD will remind you of. **One inspector armed at a time** —
+align-ui, agentation and interface-kit all want the same hover and the same
+click. And **measure at 100%** (`Shift 0`): all three read
+`getBoundingClientRect`, the canvas scales the page, and at 81% every size and
+distance comes back at 81% of the truth. The HUD says so whenever the tools are
+mounted and the camera is not at 100%.
+
 ## The screen contract
 
 A screen renders inside a frame that an ancestor is translating and scaling,
