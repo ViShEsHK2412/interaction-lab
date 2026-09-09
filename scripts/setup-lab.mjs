@@ -13,11 +13,10 @@
  *   node setup-lab.mjs ./some-folder --lab ~/tools/interaction-lab --port 5200
  *   node setup-lab.mjs ./some-folder --no-open     set up, do not start
  *
- * Everything is fetched fresh each run. agentation and interface-kit are
- * moving quickly, and align-ui and the lab are yours and move faster — a rig
- * that pins whatever it first saw is a rig that quietly goes stale, and the
- * whole point of one command is not having to remember which of five things
- * needs updating today.
+ * Everything is fetched fresh each run. agentation moves quickly, and align-ui
+ * and the lab are yours and move faster — a rig that pins whatever it first saw
+ * is a rig that goes stale without saying so, and the whole point of one
+ * command is not having to remember which piece needs updating today.
  *
  * The folder itself is only ever read. Nothing is copied into it, nothing is
  * written to it, and the lab refuses to duplicate, delete or rename anything
@@ -52,8 +51,8 @@ if (!target || has('--help') || has('-h')) {
     --no-tools     just the canvas, no overlays
 
   Clones or updates interaction-lab, installs the latest align-ui, agentation
-  and interface-kit, and opens <folder> on the canvas. The folder is read,
-  never written.
+  and dialkit, and opens <folder> on the canvas. The folder is read, never
+  written.
 
 `);
   process.exit(target ? 0 : 1);

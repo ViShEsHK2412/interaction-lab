@@ -1599,7 +1599,7 @@ export function InteractionLab() {
               <span className={styles.hudDivider} />
               <span
                 className={styles.hudBadge}
-                title="align-ui, agentation and interface-kit all read getBoundingClientRect, and the canvas scales the page. Shift 0 for 100%."
+                title="align-ui and agentation both read getBoundingClientRect, and the canvas scales the page. Shift 0 for 100%."
               >
                 measurements read {zoomLabel}% of true
               </span>
