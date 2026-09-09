@@ -5,11 +5,11 @@
  *   npm run lab:tools           install the latest of each and wire it up
  *   npm run lab:tools -- --off  unmount them again (leaves the packages)
  *
- * Three of these are components and mount once for the whole canvas, because
- * each works on a document and the canvas is one document — which is what
- * makes measuring *between* two frames possible at all. align-ui is a Vite
- * plugin rather than a component, so `vite-plugin-lab-tools.ts` picks it up
- * from the dev server instead. Nothing to edit either way.
+ * The components mount once for the whole canvas, because each works on a
+ * document and the canvas is one document — which is what makes measuring
+ * *between* two frames possible at all. align-ui is a Vite plugin rather than
+ * a component, so `vite-plugin-lab-tools.ts` picks it up from the dev server
+ * instead. Nothing to edit either way.
  *
  * What this writes is `src/lab/tools/enabled.tsx`, generated and out of git.
  * That file is the switch.
@@ -38,9 +38,14 @@ if (argv.includes('--off')) {
 /**
  * What each one is, and what it needs.
  *
- * `react` is the major version the package requires, because one of them will
- * not mount on 18 and saying so beforehand beats a blank overlay. `spec` is
- * what npm is asked for, when that differs from the name.
+ * `react` is the major version the package requires, so a tool that cannot
+ * mount here is named as skipped rather than left as a blank overlay. `spec`
+ * is what npm is asked for, when that differs from the name.
+ *
+ * interface-kit was here and is not any more: its own panel renders its shadow
+ * controls outside itself, and there is no point wiring up something visibly
+ * broken. It lives in its own shadow root, outside the lab, so that was never
+ * ours to fix.
  */
 const TOOLS = [
   {
@@ -55,12 +60,6 @@ const TOOLS = [
     notice: 'PolyForm Shield 1.0.0 — usable, not vendorable',
     imports: "import { Agentation } from 'agentation';",
     mount: '<Agentation />',
-  },
-  {
-    pkg: 'interface-kit',
-    react: 19,
-    imports: "import { InterfaceKit } from 'interface-kit/react';",
-    mount: '<InterfaceKit />',
   },
   {
     pkg: 'dialkit',
@@ -82,9 +81,9 @@ const skipped = TOOLS.filter((t) => t.react > reactMajor);
 /*
  * Always install, never "install only what is missing".
  *
- * agentation and interface-kit move fast — twenty-odd releases between them in
- * a few months — and a rig that pins whatever it first saw is a rig that
- * quietly goes stale. align-ui is yours and changes more often than that.
+ * agentation moves fast — two dozen releases in a few months — and align-ui is
+ * yours and moves faster. A rig that pins whatever it first saw is a rig that
+ * goes stale without saying so.
  */
 process.stdout.write(`\n  Installing ${wanted.map((t) => t.pkg).join(', ')}\n`);
 for (const tool of wanted) {

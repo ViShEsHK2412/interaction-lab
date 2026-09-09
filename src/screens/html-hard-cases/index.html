@@ -286,26 +286,6 @@
             return { ok: found === el, value: found === el ? 'round-tripped' : 'lost' };
           });
 
-      add('interface-kit: computed styles readable',
-          'It reads the current value before it can offer you a new one.',
-          function () {
-            var el = document.querySelector('.check') || root;
-            var cs = getComputedStyle(el);
-            return { ok: !!cs.backgroundColor, value: cs.backgroundColor };
-          });
-
-      add('interface-kit: inline style applies and reverts',
-          'applyStyle then revertProperty. If a React re-render clobbered it, this would not hold.',
-          function () {
-            var el = document.querySelector('.check') || root;
-            var before = el.style.borderRadius;
-            el.style.borderRadius = '13px';
-            var applied = getComputedStyle(el).borderTopLeftRadius === '13px';
-            el.style.borderRadius = before;
-            var reverted = getComputedStyle(el).borderTopLeftRadius !== '13px';
-            return { ok: applied && reverted, value: applied ? (reverted ? 'applied, reverted' : 'stuck') : 'not applied' };
-          });
-
       add('align-ui: there is an animation to freeze',
           'Freeze pauses running animations. It needs one to exist and be reachable.',
           function () {

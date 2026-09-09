@@ -223,9 +223,9 @@ node setup-lab.mjs ./Experiments/chapter-card-lab
 
 It clones or updates the lab, installs the latest of every tool, and opens that
 folder on the canvas with all of them over it. Everything is fetched fresh each
-run — agentation and interface-kit are moving quickly, align-ui and the lab are
-yours and move faster, and a rig that pins whatever it first saw is a rig that
-quietly goes stale.
+run — agentation moves quickly, align-ui and the lab are yours and move faster,
+and a rig that pins whatever it first saw is a rig that goes stale without
+saying so.
 
 ```
 --lab <path>   where to keep the lab   (default ~/.interaction-lab)
@@ -238,17 +238,22 @@ The folder is only ever read. Nothing is copied into it and nothing is written
 to it, and the lab refuses to duplicate, delete or rename anything outside its
 own project.
 
-## The four tools
+## The tools
 
 ```bash
 npm run lab:tools           # install and mount
 npm run lab:tools -- --off  # unmount, keep the packages
 ```
 
-agentation, interface-kit and dialkit mount **once, for the whole canvas** —
-each works on a document, and this is one document, which is what makes
-measuring *between* two frames possible at all. Per screen they would be four
-toolbars fighting over one click.
+agentation and dialkit mount **once, for the whole canvas** — each works on a
+document, and this is one document, which is what makes measuring *between* two
+frames possible at all. Per screen they would be three toolbars fighting over
+one click.
+
+interface-kit is deliberately not here. Its panel renders its own shadow
+controls outside itself, and there is no sense wiring up something visibly
+broken — it sits in its own shadow root outside the lab, so that was never the
+lab's to fix. Put it back by adding it to `TOOLS` in `scripts/lab-tools.mjs`.
 
 It writes `src/lab/tools/enabled.tsx`, which is generated and out of git. That
 file is the switch; the mount finds it with a glob rather than an import,
@@ -268,11 +273,11 @@ here — it works on values you declare yourself with `useDialKit`, so it shows
 nothing until you have declared one.
 
 Two things the HUD will remind you of. **One inspector armed at a time** —
-align-ui, agentation and interface-kit all want the same hover and the same
-click. And **measure at 100%** (`Shift 0`): all three read
-`getBoundingClientRect`, the canvas scales the page, and at 81% every size and
-distance comes back at 81% of the truth. The HUD says so whenever the tools are
-mounted and the camera is not at 100%.
+align-ui and agentation both want the same hover and the same click. And
+**measure at 100%** (`Shift 0`): both read `getBoundingClientRect`, the canvas
+scales the page, and at 81% every size and distance comes back at 81% of the
+truth. The HUD says so whenever the tools are mounted and the camera is not at
+100%.
 
 ## The screen contract
 
