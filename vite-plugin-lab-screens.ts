@@ -135,7 +135,16 @@ export function labScreens(): Plugin {
         root,
         resolve(configured ?? here).split('\\').join('/'),
       ])];
-      return { server: { fs: { allow } } };
+      /*
+       * And the project root, spelled the same way.
+       *
+       * Naming both forms in the list is not enough on its own: Vite resolves
+       * the entries but leaves the request id as the root produced it, so a
+       * short-name root asks for a short-name file and matches neither entry.
+       * Handing it a root that is already real makes both sides agree. It is
+       * the same directory either way — only the spelling changes.
+       */
+      return { root: real(process.cwd()), server: { fs: { allow } } };
     },
 
     configResolved() {
