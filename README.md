@@ -238,6 +238,13 @@ The folder is only ever read. Nothing is copied into it and nothing is written
 to it, and the lab refuses to duplicate, delete or rename anything outside its
 own project.
 
+One known limit, on Windows only: keep the lab somewhere with a normal path.
+Vite checks a request against its serving allow list by resolved path but
+leaves the request itself as its root produced it, so a directory carrying an
+8.3 short name — `VISHES~1` for `VISHESH2004`, which is what temp directories
+usually have — refuses files it visibly contains. The default `~/.interaction-lab`
+is fine. A path under `%TEMP%` may not be.
+
 ## The tools
 
 ```bash
