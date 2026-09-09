@@ -118,7 +118,24 @@ export function labScreens(): Plugin {
        * list holding only the target folder locks the lab out of its own
        * `index.html`, and every page 403s including the one you asked for.
        */
-      return { server: { fs: { allow: [real(process.cwd()), root] } } };
+      /*
+       * Both spellings of every path, because only one of them matches.
+       *
+       * Vite resolves the request against its own root, which is `cwd` as the
+       * process received it, and checks it against this list. On Windows one
+       * of those can be an 8.3 short name and the other the long one, and
+       * which side is short depends on how the process was started - so a
+       * list holding either alone refuses a path it visibly contains. Naming
+       * both costs two strings and removes the guess.
+       */
+      const here = process.cwd();
+      const allow = [...new Set([
+        here.split('\\').join('/'),
+        real(here),
+        root,
+        resolve(configured ?? here).split('\\').join('/'),
+      ])];
+      return { server: { fs: { allow } } };
     },
 
     configResolved() {
