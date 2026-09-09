@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
@@ -30,6 +30,24 @@ interface Page {
 const isPage = (name: string) => /\.html?$/i.test(name);
 
 /**
+ * A path as the filesystem really spells it, with forward slashes.
+ *
+ * Windows hands out 8.3 short names - VISHES~1 for VISHESH2004 - and a
+ * process started under one keeps it. Vite checks a request against its
+ * allow list by real path, so an entry added in short form matches nothing:
+ * the list printed in the 403 contains the very path being refused, spelled
+ * the other way. Only a cold run in a temp directory shows it, because that
+ * is where the short names live.
+ */
+function real(path: string): string {
+  try {
+    return (realpathSync.native ?? realpathSync)(path).split('\\').join('/');
+  } catch {
+    return path.split('\\').join('/');
+  }
+}
+
+/**
  * Pages in the folder, and in its immediate subfolders.
  *
  * Two levels rather than a full walk: an experiments folder holds pages beside
@@ -56,7 +74,7 @@ function scan(root: string): Page[] {
         continue;
       }
       if (stat.isFile() && isPage(name)) {
-        out.push({ rel: prefix + name, abs: abs.split('\\').join('/') });
+        out.push({ rel: prefix + name, abs: real(abs) });
       }
     }
   };
@@ -82,7 +100,7 @@ function scan(root: string): Page[] {
 
 export function labScreens(): Plugin {
   const configured = process.env['LAB_SCREENS'];
-  const root = configured ? resolve(configured).split('\\').join('/') : null;
+  const root = configured ? real(resolve(configured)) : null;
 
   return {
     name: 'lab-screens',
@@ -100,7 +118,7 @@ export function labScreens(): Plugin {
        * list holding only the target folder locks the lab out of its own
        * `index.html`, and every page 403s including the one you asked for.
        */
-      return { server: { fs: { allow: [process.cwd(), root] } } };
+      return { server: { fs: { allow: [real(process.cwd()), root] } } };
     },
 
     configResolved() {
