@@ -1440,6 +1440,7 @@ export function InteractionLab() {
   const labelColour = pickReadable(canvasColour, ['#5a5a5a', '#b4b4b4', '#000000', '#ffffff']);
 
   return (
+    <>
     <div
       className={styles.root}
       ref={rootCallback}
@@ -1569,12 +1570,6 @@ export function InteractionLab() {
       />
 
       <div className={styles.chrome} ref={chromeRef}>
-        {/*
-          Once, for the whole canvas. Every one of these tools works on a
-          document, and this is one document, so a single pass reaches every
-          screen — which is what measuring *between* two frames needs.
-        */}
-        <Overlays />
         <Toasts />
         <div ref={snapLayerRef} />
         <div className={styles.sizeBadge} ref={badgeRef} style={{ display: 'none' }} />
@@ -1715,6 +1710,18 @@ export function InteractionLab() {
         </div>
       </div>
     </div>
+
+      {/*
+        The tools, outside the lab entirely.
+
+        They were inside the chrome, which is absolutely positioned across the
+        whole root with pointer-events off — a layer built to sit over the
+        canvas and let clicks through, which is no place for a panel with its
+        own layout. Each of these is an overlay on the document, so the
+        document is where it goes, and it inherits nothing of ours.
+      */}
+      <Overlays />
+    </>
   );
 }
 

@@ -212,6 +212,32 @@ It also has to name the project's own directory in `server.fs.allow` alongside
 the target: setting that from a plugin replaces the default rather than adding
 to it, and the default is what lets Vite serve the lab at all.
 
+## From nothing, in one command
+
+`scripts/setup-lab.mjs` is self-contained on purpose: copy it anywhere, hand it
+to an agent, point it at a folder. It needs `git` and `node` and nothing else.
+
+```bash
+node setup-lab.mjs ./Experiments/chapter-card-lab
+```
+
+It clones or updates the lab, installs the latest of every tool, and opens that
+folder on the canvas with all of them over it. Everything is fetched fresh each
+run — agentation and interface-kit are moving quickly, align-ui and the lab are
+yours and move faster, and a rig that pins whatever it first saw is a rig that
+quietly goes stale.
+
+```
+--lab <path>   where to keep the lab   (default ~/.interaction-lab)
+--port <n>     dev server port         (default 5190)
+--no-open      set up, do not start
+--no-tools     just the canvas
+```
+
+The folder is only ever read. Nothing is copied into it and nothing is written
+to it, and the lab refuses to duplicate, delete or rename anything outside its
+own project.
+
 ## The four tools
 
 ```bash
@@ -229,12 +255,17 @@ file is the switch; the mount finds it with a glob rather than an import,
 because a glob that matches nothing is an empty object while an import of a
 file that is not there is a build error.
 
-align-ui is separate, because it is a Vite plugin rather than a component:
+align-ui comes with them, and needs no config edit either. It is a Vite plugin
+rather than a component, so it has to be named in `vite.config.ts` — but a
+config that imports a package the project may not have will not load at all, so
+the lab would refuse to start until you had installed a measuring tool you never
+asked for. `vite-plugin-lab-tools.ts` resolves it at startup instead: installed,
+it is on (`Ctrl/Cmd + Shift + A`); absent, it is an empty array. Restart the dev
+server after installing, since plugins are read once.
 
-```ts
-import align from 'align-ui/vite';
-export default defineConfig({ plugins: [react(), labFs(), labScreens(), align()] });
-```
+dialkit is installed and its `DialRoot` is mounted, which is all it needs from
+here — it works on values you declare yourself with `useDialKit`, so it shows
+nothing until you have declared one.
 
 Two things the HUD will remind you of. **One inspector armed at a time** —
 align-ui, agentation and interface-kit all want the same hover and the same
