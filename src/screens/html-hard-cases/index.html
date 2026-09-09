@@ -112,6 +112,7 @@
     <button id="open-dialog">Open a dialog (then press Esc)</button>
     <span class="tally" id="tally">—</span>
     <span class="pulse" id="pulser" style="color:var(--dim)">animating</span>
+    <img id="asset" src="./asset-probe.svg" alt="" width="16" height="16">
   </div>
 
   <div class="grid" id="out"></div>
@@ -312,6 +313,15 @@
             if (!el.getAnimations) return { ok: false, value: 'getAnimations unsupported' };
             var anims = el.getAnimations();
             return { ok: anims.length > 0, value: anims.length + ' running' };
+          });
+
+      add('A file beside me loads',
+          'A prototype keeps its images next to it. Relative to the file, not to the page hosting it.',
+          function () {
+            var img = document.getElementById('asset');
+            if (!img) return { ok: false, value: 'no probe image' };
+            return { ok: img.complete && img.naturalWidth > 0,
+                     value: (img.naturalWidth > 0 ? 'loaded from ' : 'FAILED from ') + img.currentSrc };
           });
 
       add('dialkit vanilla: a global survives the mount',

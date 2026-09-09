@@ -4,6 +4,7 @@ import {
   scopeCss, scopeSelectorList, tilePosition, titleFromSlug,
   usesInlineHandlers, wrapScript, firstFreeRow,
   splitSelectorList, scopeFor, cssSuffix, renameKeyframes,
+  resolveAssetUrl, resolveSrcset, rewriteCssUrls,
 } from './html-screens';
 
 /** Whitespace is free in CSS and the scoper adds some. Compare on shape. */
@@ -468,5 +469,112 @@ describe('scopeCss', () => {
   it('takes a custom scope, so two screens could be told apart', () => {
     expect(tidy(scopeCss('h1 { color: red; }', '#screen-a')))
       .toBe('#screen-a h1 { color: red; }');
+  });
+});
+
+describe('resolveAssetUrl', () => {
+  const base = 'http://localhost:5190/src/screens/cards/';
+
+  it('resolves a file beside the page', () => {
+    expect(resolveAssetUrl('./card.png', base))
+      .toBe('http://localhost:5190/src/screens/cards/card.png');
+  });
+
+  it('resolves a bare filename, which is the same thing written shorter', () => {
+    expect(resolveAssetUrl('card.png', base))
+      .toBe('http://localhost:5190/src/screens/cards/card.png');
+  });
+
+  it('climbs out of the folder when asked', () => {
+    expect(resolveAssetUrl('../shared/logo.svg', base))
+      .toBe('http://localhost:5190/src/screens/shared/logo.svg');
+  });
+
+  it('leaves an absolute URL alone', () => {
+    const url = 'https://fonts.gstatic.com/x.woff2';
+    expect(resolveAssetUrl(url, base)).toBe(url);
+  });
+
+  it('leaves a protocol-relative URL alone', () => {
+    expect(resolveAssetUrl('//cdn.example/x.js', base)).toBe('//cdn.example/x.js');
+  });
+
+  it('leaves data: and blob: alone', () => {
+    expect(resolveAssetUrl('data:image/svg+xml,<svg/>', base)).toBe('data:image/svg+xml,<svg/>');
+    expect(resolveAssetUrl('blob:abc', base)).toBe('blob:abc');
+  });
+
+  it('leaves a bare fragment alone, which is a link into this page', () => {
+    expect(resolveAssetUrl('#section', base)).toBe('#section');
+  });
+
+  it('leaves a server-rooted path alone', () => {
+    expect(resolveAssetUrl('/logo.png', base)).toBe('/logo.png');
+  });
+
+  it('leaves an empty value alone rather than inventing the folder', () => {
+    expect(resolveAssetUrl('', base)).toBe('');
+    expect(resolveAssetUrl('   ', base)).toBe('   ');
+  });
+
+  it('survives a base it cannot parse', () => {
+    expect(resolveAssetUrl('./x.png', 'not a url')).toBe('./x.png');
+  });
+});
+
+describe('resolveSrcset', () => {
+  const base = 'http://localhost:5190/src/screens/cards/';
+
+  it('resolves every candidate and keeps its descriptor', () => {
+    expect(resolveSrcset('a.png 1x, b.png 2x', base))
+      .toBe('http://localhost:5190/src/screens/cards/a.png 1x, '
+          + 'http://localhost:5190/src/screens/cards/b.png 2x');
+  });
+
+  it('handles a single candidate with no descriptor', () => {
+    expect(resolveSrcset('a.png', base))
+      .toBe('http://localhost:5190/src/screens/cards/a.png');
+  });
+
+  it('leaves absolute candidates alone', () => {
+    expect(resolveSrcset('https://x/a.png 1x', base)).toBe('https://x/a.png 1x');
+  });
+});
+
+describe('rewriteCssUrls', () => {
+  const base = 'http://localhost:5190/src/screens/cards/';
+
+  it('rewrites url() in every quoting style', () => {
+    expect(rewriteCssUrls('a { background: url(bg.png); }', base))
+      .toContain('url(http://localhost:5190/src/screens/cards/bg.png)');
+    expect(rewriteCssUrls("a { background: url('bg.png'); }", base))
+      .toContain("url('http://localhost:5190/src/screens/cards/bg.png')");
+    expect(rewriteCssUrls('a { background: url("bg.png"); }', base))
+      .toContain('url("http://localhost:5190/src/screens/cards/bg.png")');
+  });
+
+  it('rewrites a font-face source', () => {
+    expect(rewriteCssUrls('@font-face { src: url(./x.woff2) format("woff2"); }', base))
+      .toContain('/src/screens/cards/x.woff2');
+  });
+
+  it('rewrites an @import target', () => {
+    expect(rewriteCssUrls('@import "shared.css";', base))
+      .toBe('@import "http://localhost:5190/src/screens/cards/shared.css";');
+  });
+
+  it('leaves an absolute url() untouched, character for character', () => {
+    const css = 'a { background: url(https://x/y.png); }';
+    expect(rewriteCssUrls(css, base)).toBe(css);
+  });
+
+  it('leaves a data: url untouched', () => {
+    const css = 'a { background: url(data:image/png;base64,AAA); }';
+    expect(rewriteCssUrls(css, base)).toBe(css);
+  });
+
+  it('leaves a sheet with no urls exactly as it was', () => {
+    const css = 'a { color: red; }';
+    expect(rewriteCssUrls(css, base)).toBe(css);
   });
 });

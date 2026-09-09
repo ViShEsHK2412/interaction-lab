@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useScreen } from '../screen-context';
 import {
-  BODY_ATTR, cssSuffix, parseHtmlDocument, renameKeyframes, scopeCss, scopeFor,
-  usesInlineHandlers, wrapScript,
+  BODY_ATTR, cssSuffix, parseHtmlDocument, renameKeyframes, resolveAssetUrl, scopeCss,
+  scopeFor, usesInlineHandlers, wrapScript,
 } from './html-screens';
 
 /**
@@ -58,6 +58,8 @@ function scopedDocument(root: HTMLElement): Document {
 export interface HtmlScreenProps {
   screenId: string;
   html: string;
+  /** The folder the file came from, so its own assets still resolve. */
+  base: string;
   /** Mount behind a shadow root instead of scoping the CSS. Off by default. */
   isolate: boolean;
 }
@@ -71,7 +73,7 @@ export interface HtmlScreenProps {
  * a canvas exists to make. One document keeps every screen reachable by one
  * pass of one tool.
  */
-export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
+export function HtmlScreen({ screenId, html, base, isolate }: HtmlScreenProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const { active, visible, frameSize, setEscapeInterceptor } = useScreen();
 
@@ -86,7 +88,7 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
     const host = hostRef.current;
     if (!host) return undefined;
 
-    const parsed = parseHtmlDocument(html, document);
+    const parsed = parseHtmlDocument(html, document, base);
     const root: HTMLElement | ShadowRoot = isolate
       ? (host.shadowRoot ?? host.attachShadow({ mode: 'open' }))
       : host;
@@ -127,7 +129,7 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
         // linked sheet is nearly always a font.
         const link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = sheet.value;
+        link.href = resolveAssetUrl(sheet.value, base);
         root.appendChild(link);
       }
     }
@@ -191,7 +193,7 @@ export function HtmlScreen({ screenId, html, isolate }: HtmlScreenProps) {
       delete rest[screenId];
       window.__labScreens = rest;
     };
-  }, [html, isolate, screenId]);
+  }, [html, base, isolate, screenId]);
 
   /**
    * The contract, in the only shape a plain HTML file can read it.

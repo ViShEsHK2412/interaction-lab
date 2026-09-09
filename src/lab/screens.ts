@@ -28,6 +28,15 @@ export interface ScreenDef {
   html: string | null;
   /** The file the HTML came from, for the label and for error messages. */
   htmlFile: string | null;
+  /**
+   * The folder the screen's files live in, as a URL.
+   *
+   * A prototype refers to its images and fonts relatively, because relative to
+   * the file is what "beside it" means when the file is opened directly.
+   * Hosted here, the page resolving those references is the lab, so they have
+   * to be resolved against this instead.
+   */
+  base: string;
   /** Mount HTML inside a shadow root. Meaningless for component screens. */
   isolate: boolean;
   /**
@@ -57,6 +66,28 @@ const pages = import.meta.glob<string>(
   '../screens/*/*.html',
   { query: '?raw', import: 'default', eager: true },
 );
+
+/**
+ * Where a screen folder is served from, resolved off this module's own URL.
+ *
+ * The second argument is a variable rather than `import.meta.url` written
+ * literally, which matters more than it looks: Vite treats
+ * `new URL(<expression>, import.meta.url)` as an asset reference and compiles
+ * the expression into a lookup in a map it built at transform time. A template
+ * literal is not statically analysable, so the map is empty, the lookup is
+ * `undefined`, and every screen resolved its files against this module's own
+ * folder instead of its own. Holding the URL in a variable is an ordinary
+ * `new URL` again.
+ */
+const MODULE_URL = import.meta.url;
+
+function baseFor(dir: string): string {
+  try {
+    return new URL(`../screens/${dir}/`, MODULE_URL).href;
+  } catch {
+    return '';
+  }
+}
 
 function dirOf(path: string): string | undefined {
   return path.split('/').at(-2);
@@ -129,11 +160,17 @@ function build(): ScreenDef[] {
         component: null,
         html,
         htmlFile: file,
+        base: baseFor(dir),
         isolate: manifest.isolate === true,
       });
     } else if (manifest.component) {
       out.push({
-        ...base, component: manifest.component, html: null, htmlFile: null, isolate: true,
+        ...base,
+        component: manifest.component,
+        html: null,
+        htmlFile: null,
+        base: baseFor(dir),
+        isolate: true,
       });
     }
   }
@@ -169,6 +206,7 @@ function build(): ScreenDef[] {
         component: null,
         html: files.get(file) ?? '',
         htmlFile: file,
+        base: baseFor(dir),
         // Light DOM. A shadow root would cut the file's own scripts off from
         // `document.getElementById`, which is how a prototype finds itself.
         isolate: false,

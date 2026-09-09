@@ -134,10 +134,10 @@ function ScreenFrameInner(props: FrameProps) {
   const content = useMemo(() => {
     if (Component) return <Component />;
     if (html !== null) {
-      return <HtmlScreen screenId={def.id} html={html} isolate={def.isolate} />;
+      return <HtmlScreen screenId={def.id} html={html} base={def.base} isolate={def.isolate} />;
     }
     return null;
-  }, [Component, html, def.id, def.isolate]);
+  }, [Component, html, def.id, def.base, def.isolate]);
 
   return (
     <div

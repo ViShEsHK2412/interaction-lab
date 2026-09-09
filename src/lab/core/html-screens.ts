@@ -434,6 +434,103 @@ ${text}
 }
 
 /**
+ * Resolve one URL against the folder its file lives in.
+ *
+ * A prototype keeps its images, fonts and scripts beside itself and refers to
+ * them relatively, because relative to the file is what "beside" means when
+ * you open the file directly. Mounted into the lab, the page doing the
+ * resolving is the lab, so `./card.png` asks the lab's own origin for a file
+ * that was never there and the image silently fails to load.
+ *
+ * Anything already absolute is left exactly as written: an absolute URL, a
+ * protocol-relative one, `data:`, `blob:`, a bare fragment, and a path rooted
+ * at the server are all either resolved already or deliberately not relative.
+ */
+export function resolveAssetUrl(value: string, base: string): string {
+  const url = value.trim();
+  if (!url) return value;
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|\/)/i.test(url)) return value;
+  try {
+    return new URL(url, base).href;
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * The same, for a `srcset`: a comma-separated list of `url descriptor` pairs.
+ *
+ * Splitting on commas is wrong in general — a URL may contain one — but a
+ * descriptor cannot, so splitting on a comma followed by whitespace and a
+ * non-descriptor is close enough for a prototype and safe on anything it
+ * cannot parse, which it returns untouched.
+ */
+export function resolveSrcset(value: string, base: string): string {
+  return value
+    .split(',')
+    .map((part) => {
+      const trimmed = part.trim();
+      if (!trimmed) return part;
+      const [url, ...rest] = trimmed.split(/\s+/);
+      if (!url) return part;
+      return [resolveAssetUrl(url, base), ...rest].join(' ');
+    })
+    .join(', ');
+}
+
+/**
+ * Rewrite the URLs a stylesheet reaches for.
+ *
+ * `url()` in a background or a `@font-face`, and the target of an `@import`.
+ * Same reason as the markup: the sheet was written relative to the file, and
+ * it is being read by a document somewhere else entirely.
+ */
+export function rewriteCssUrls(css: string, base: string): string {
+  const withUrls = css.replace(
+    /url\(\s*(['"]?)([^'")]+?)\1\s*\)/gi,
+    (whole, quote: string, url: string) => {
+      const next = resolveAssetUrl(url, base);
+      return next === url ? whole : `url(${quote}${next}${quote})`;
+    },
+  );
+  return withUrls.replace(
+    /@import\s+(['"])([^'"]+)\1/gi,
+    (whole, quote: string, url: string) => {
+      const next = resolveAssetUrl(url, base);
+      return next === url ? whole : `@import ${quote}${next}${quote}`;
+    },
+  );
+}
+
+/** The attributes that name a file the browser will go and fetch. */
+const URL_ATTRS = ['src', 'href', 'poster', 'data'] as const;
+
+/**
+ * Point every relative reference in a parsed document at the screen's folder.
+ *
+ * Done on the inert document from `DOMParser`, before any of it reaches the
+ * page, so nothing is ever requested from the wrong place even once.
+ */
+export function resolveDocumentUrls(doc: Document, base: string): void {
+  for (const el of doc.querySelectorAll('*')) {
+    for (const attr of URL_ATTRS) {
+      const value = el.getAttribute(attr);
+      // An anchor's href is a destination, not an asset: rewriting it would
+      // turn a link to another prototype into a link to a file the lab serves.
+      if (value === null || (attr === 'href' && el.tagName === 'A')) continue;
+      const next = resolveAssetUrl(value, base);
+      if (next !== value) el.setAttribute(attr, next);
+    }
+    const srcset = el.getAttribute('srcset');
+    if (srcset !== null) el.setAttribute('srcset', resolveSrcset(srcset, base));
+    const style = el.getAttribute('style');
+    if (style !== null && style.includes('url(')) {
+      el.setAttribute('style', rewriteCssUrls(style, base));
+    }
+  }
+}
+
+/**
  * A full HTML document, split into the parts a shadow root can take.
  *
  * `innerHTML` on a shadow root drops `<html>`, `<head>` and `<body>` on the
@@ -462,13 +559,23 @@ export interface ParsedHtml {
  * inertness is the whole reason to parse rather than assign `innerHTML` and
  * hope.
  */
-export function parseHtmlDocument(html: string, doc: Document): ParsedHtml {
+export function parseHtmlDocument(html: string, doc: Document, base?: string): ParsedHtml {
   const parsed = new DOMParser().parseFromString(html, 'text/html');
+
+  /*
+   * Point every relative reference at the folder the file came from, first.
+   *
+   * Before anything is extracted and before a single node reaches the page, so
+   * no request is ever made against the lab's own origin — not even once, and
+   * not even for an image that would have failed quietly.
+   */
+  if (base) resolveDocumentUrls(parsed, base);
 
   const styles: ParsedHtml['styles'] = [];
   for (const el of parsed.querySelectorAll('style, link[rel~="stylesheet" i]')) {
     if (el.tagName === 'STYLE') {
-      styles.push({ kind: 'text', value: el.textContent ?? '' });
+      const text = el.textContent ?? '';
+      styles.push({ kind: 'text', value: base ? rewriteCssUrls(text, base) : text });
     } else {
       const href = el.getAttribute('href');
       if (href) styles.push({ kind: 'href', value: href });

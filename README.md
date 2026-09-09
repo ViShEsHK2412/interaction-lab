@@ -161,6 +161,13 @@ vanilla JS can both reach them:
 | `lab:unmount` event | the screen is going away: stop your timers, loops and observers |
 | `window.__labScreens[id]` | every mounted screen's root, for a test driver |
 
+A file's own images, fonts, stylesheets and scripts resolve against the folder
+it came from, not against the lab: `./card.png` beside the file still means
+beside the file. The one thing that cannot be fixed from out here is a URL the
+screen's own JavaScript builds at runtime — `fetch('./data.json')` resolves
+against the page, and the page is the lab. Ask for it relative to
+`import.meta.url`, or give it an absolute path.
+
 Removing a script does not stop what it started, so a screen that runs a loop,
 an interval or an observer has to stop it on `lab:unmount`. Nothing else can:
 the lab cannot reach inside a script it executed. A screen that ignores this
