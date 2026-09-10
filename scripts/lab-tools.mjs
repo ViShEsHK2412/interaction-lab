@@ -40,7 +40,8 @@ if (argv.includes('--off')) {
  *
  * `react` is the major version the package requires, so a tool that cannot
  * mount here is named as skipped rather than left as a blank overlay. `spec`
- * is what npm is asked for, when that differs from the name.
+ * is what npm is asked for, when that differs from the name. `with` is a peer
+ * the adapter needs that npm will not fetch on its own.
  *
  * interface-kit was here and is not any more: its own panel renders its shadow
  * controls outside itself, and there is no point wiring up something visibly
@@ -64,6 +65,17 @@ const TOOLS = [
   {
     pkg: 'dialkit',
     react: 18,
+    /*
+     * The React adapter needs `motion`, and nothing will tell you so.
+     *
+     * dialkit marks it an *optional* peer — correctly, since its Svelte and
+     * vanilla adapters do not want it — so npm installs nothing and warns
+     * about nothing. But `dist/index.js`, which is where `DialRoot` comes
+     * from, reaches for it, and the failure waits until a panel actually
+     * renders. Its own quick start says `npm install dialkit motion` for
+     * exactly this reason.
+     */
+    with: ['motion'],
     imports: "import { DialRoot } from 'dialkit';",
     mount: '<DialRoot />',
   },
@@ -92,7 +104,13 @@ for (const tool of wanted) {
 
 const install = spawnSync(
   'npm',
-  ['i', '-D', ...wanted.map((t) => t.spec ?? `${t.pkg}@latest`)],
+  [
+    'i', '-D',
+    ...wanted.flatMap((t) => [
+      t.spec ?? `${t.pkg}@latest`,
+      ...(t.with ?? []).map((peer) => `${peer}@latest`),
+    ]),
+  ],
   { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' },
 );
 if (install.status !== 0) process.exit(install.status ?? 1);

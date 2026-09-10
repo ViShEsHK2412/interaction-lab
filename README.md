@@ -275,9 +275,15 @@ asked for. `vite-plugin-lab-tools.ts` resolves it at startup instead: installed,
 it is on (`Ctrl/Cmd + Shift + A`); absent, it is an empty array. Restart the dev
 server after installing, since plugins are read once.
 
-dialkit is installed and its `DialRoot` is mounted, which is all it needs from
-here — it works on values you declare yourself with `useDialKit`, so it shows
-nothing until you have declared one.
+dialkit is installed with `motion`, which its React adapter needs and npm will
+not fetch: dialkit marks it an *optional* peer, correctly, because its Svelte
+and vanilla adapters do not want it — so npm installs nothing and warns about
+nothing, while the entry `DialRoot` comes from reaches for it anyway. Its own
+quick start says `npm install dialkit motion` for that reason.
+
+`DialRoot` is mounted, which is all dialkit needs from here. It works on values
+you declare yourself with `useDialKit`, so it shows nothing until you have
+declared one.
 
 Two things the HUD will remind you of. **One inspector armed at a time** —
 align-ui and agentation both want the same hover and the same click. And

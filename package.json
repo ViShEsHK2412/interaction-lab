@@ -24,7 +24,8 @@
     "@vitejs/plugin-react": "^5.1.0",
     "agentation": "^3.0.2",
     "align-ui": "github:ViShEsHK2412/align-ui",
-    "dialkit": "^2.0.1",
+    "dialkit": "^2.0.2",
+    "motion": "^13.2.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.0",
     "vitest": "^3.2.0"
