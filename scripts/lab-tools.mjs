@@ -51,6 +51,16 @@ if (argv.includes('--off')) {
 const TOOLS = [
   {
     pkg: 'align-ui',
+    /*
+     * The shorthand, and it does not matter that npm records it as ssh.
+     *
+     * `github:user/repo` is normalised into `git+ssh://git@github.com/...` in
+     * the lock, which looks like it would need a key on a machine nobody has
+     * set up. It does not: npm falls back to https. Tested by breaking ssh
+     * outright — `GIT_SSH_COMMAND=false npm i -D github:ViShEsHK2412/align-ui`
+     * installs cleanly. Writing the https URL here changes nothing, because
+     * npm normalises that back to the same shorthand.
+     */
     spec: 'github:ViShEsHK2412/align-ui',
     react: 0,
     plugin: true,
