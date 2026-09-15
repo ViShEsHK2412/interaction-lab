@@ -131,20 +131,6 @@ failing.
   of the truth — a 24px control measures 2.62px at fit-all. `window.__labScale()`
   is that number, so `rect.width / __labScale(screenId)` is the real one, and
   `?only=` sidesteps it entirely. The HUD warns when tools are mounted off 100%.
-- **The lab's toolbar stands on the bottom of a screen**, which is where app
-  chrome naturally goes — docks, action bars, toasts. A screen cannot see it,
-  so pad against what it reserves:
-
-  ```css
-  padding-bottom: var(--lab-chrome-bottom, 0px);
-  ```
-
-  Set on your screen's root, in *your* pixels rather than the canvas's, so it
-  means the same at any zoom. Zero when nothing overlaps and when you are not
-  the screen being used; absent entirely when the file is opened on its own,
-  which is why the fallback belongs in the declaration. The toolbar also fades
-  to a sixteenth while a screen is filling the window, and comes back on hover
-  or focus.
 - **The keyboard is not scoped, and cannot be.** Four screens in one document
   means a bare `window.addEventListener('keydown')` has all four answering one
   keypress. Gate on the screen's own state: `root.dataset.active === 'true'`,
