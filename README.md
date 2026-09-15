@@ -231,6 +231,10 @@ to it, and the default is what lets Vite serve the lab at all.
 
 ## From nothing, in one command
 
+> **[RUNBOOK.md](RUNBOOK.md)** is the page to hand an agent: the one
+> command, how to verify it worked, and why the failures in this codebase
+> are silent.
+
 `scripts/setup-lab.mjs` is self-contained on purpose: copy it anywhere, hand it
 to an agent, point it at a folder. It needs `git` and `node` and nothing else.
 

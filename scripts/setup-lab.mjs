@@ -156,7 +156,10 @@ step(`Opening ${folder} on the canvas`);
 process.stdout.write(
   '\n  Double-click a screen to use it, Esc to come back out.\n'
   + '  Shift 1 fits everything. Shift 0 is 100%, which is where you measure.\n'
-  + '  align-ui is Ctrl/Cmd + Shift + A.\n\n',
+  + '  align-ui is Ctrl/Cmd + Shift + A.\n\n'
+  + `\n  If anything looks wrong: ${labDir}/RUNBOOK.md\n`
+  + '  Check a computed style, never a screenshot - an unstyled page and a\n'
+  + '  styled one are the same thumbnail.\n\n',
 );
 
 const child = spawn('npm', ['run', 'lab', '--', folder, '--port', port], {
