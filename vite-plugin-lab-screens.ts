@@ -158,7 +158,7 @@ export function labScreens(): Plugin {
       if (id !== RESOLVED) return null;
       if (!root) {
         return 'export const root = null;\nexport const pages = {};\n'
-          + 'export const isolate = false;\n';
+          + 'export const isolate = false;\n' + 'export const demos = true;\n';
       }
 
       const found = scan(root);
@@ -184,6 +184,16 @@ export function labScreens(): Plugin {
        * care gets far stronger isolation for free, so a `lab.json` beside the
        * pages can say `{ "isolate": true }` and have it.
        */
+      /*
+       * The lab's own demo screens step aside once it is pointed at real work.
+       *
+       * feed, playground, the hard cases and the html samples exercise the
+       * contract; they are not meant to sit on a canvas beside the ten
+       * variants you came to compare. Deleting them does not stick either,
+       * because every run re-fetches the repo. `--demos` brings them back.
+       */
+      const demos = process.env['LAB_DEMOS'] === '1';
+
       let isolate = false;
       try {
         const manifest = JSON.parse(
@@ -195,6 +205,7 @@ export function labScreens(): Plugin {
       return `${imports}
 export const root = ${JSON.stringify(root)};
 export const isolate = ${JSON.stringify(isolate)};
+export const demos = ${JSON.stringify(demos)};
 export const pages = {
 ${entries}
 };

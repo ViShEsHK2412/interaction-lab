@@ -12,4 +12,6 @@ declare module 'virtual:lab-screens' {
   export const pages: Record<string, { html: string; base: string }>;
   /** Whether that folder asked for a shadow root, via `lab.json`. */
   export const isolate: boolean;
+  /** Whether the lab's own demo screens should mount alongside it. */
+  export const demos: boolean;
 }

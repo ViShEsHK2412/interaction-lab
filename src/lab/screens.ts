@@ -1,7 +1,8 @@
 import type { ComponentType } from 'react';
 import type { ScreenManifest } from './screen-manifest';
 import {
-  isolate as externalIsolate, pages as externalPages, root as externalRoot,
+  demos as showDemos, isolate as externalIsolate, pages as externalPages,
+  root as externalRoot,
 } from 'virtual:lab-screens';
 import {
   DEFAULT_HTML_SIZE, firstFreeRow, htmlScreenId, orderHtmlFiles, tilePosition, titleFromSlug,
@@ -110,6 +111,14 @@ function fileOf(path: string): string {
 
 function build(): ScreenDef[] {
   const out: ScreenDef[] = [];
+  /*
+   * The lab's own screens are for testing the lab.
+   *
+   * Once it is pointed at a folder, they are eight frames of noise beside the
+   * work — and they cannot be deleted, because the next run re-fetches the
+   * repo over the top. `--demos` asks for them back.
+   */
+  const withDemos = externalRoot === null || showDemos;
   const seen = new Set<string>();
   /** Auto-placed screens are tiled in the order they are discovered. */
   let tiled = 0;
@@ -136,6 +145,7 @@ function build(): ScreenDef[] {
 
   // ── Folders with a manifest ────────────────────────────────────────────
   for (const [path, mod] of Object.entries(manifests)) {
+    if (!withDemos) break;
     const dir = dirOf(path);
     const manifest = mod?.default;
     if (!dir || !manifest) continue;
@@ -194,6 +204,7 @@ function build(): ScreenDef[] {
 
   // ── Folders that are just HTML ─────────────────────────────────────────
   for (const [dir, files] of byDir) {
+    if (!withDemos) break;
     // A manifest in the folder decides what the folder is. Its other HTML
     // files are references, screenshots-in-waiting and half-finished ideas,
     // and putting them on the canvas uninvited would be a surprise.

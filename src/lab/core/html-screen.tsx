@@ -391,8 +391,21 @@ export function HtmlScreen({ screenId, html, file, base, isolate }: HtmlScreenPr
     const host = hostRef.current;
     const body = window.__labScreens?.[screenId] ?? host;
     if (!body) return undefined;
+    /*
+     * Told, not just marked.
+     *
+     * Four screens in one document means a bare `window.addEventListener(
+     * 'keydown')` has all four answering one keypress — there is no per-window
+     * anything to scope it with. The attribute says which screen owns the
+     * keyboard, and these events say when that changed, so a screen can arm and
+     * disarm instead of guessing from hover or `activeElement`.
+     */
+    const was = body.getAttribute('data-active');
     body.setAttribute('data-active', active ? 'true' : 'false');
     body.setAttribute('data-visible', visible ? 'true' : 'false');
+    if (was !== null && was !== String(active)) {
+      body.dispatchEvent(new CustomEvent(active ? 'lab:active' : 'lab:inactive'));
+    }
 
     /*
      * The size comes from the screen's own box, not the frame's.

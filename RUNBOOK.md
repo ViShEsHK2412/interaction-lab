@@ -107,19 +107,45 @@ specifically for URL resolution, because that test used a built-in screen.
 If you change anything in `html-screen.tsx` or `html-screens.ts`, **verify it
 against a folder outside the project.** That is the case that breaks.
 
+## Looking at one screen
+
+```
+http://localhost:5190/?only=card-elite
+```
+
+One screen, alone, at its real size — no canvas, no camera, no scaling. This
+is the route for an honest screenshot and for anything that measures, because
+on the canvas every client rect is multiplied by the camera's scale. Ask for a
+name that is not there and it lists the ones that are.
+
+Do **not** try `/screens/card-elite.html`. A dev server with an SPA fallback
+answers that with the whole canvas rather than a 404, which is worse than
+failing.
+
 ## What is still true, and worth knowing
 
 - **One inspector armed at a time.** align-ui and agentation both want the same
   hover and the same click.
-- **Measure at 100%** (`Shift 0`). The canvas scales the page, so anything
-  reading `getBoundingClientRect` at 81% zoom reports 81% of the truth. The HUD
-  says so when tools are mounted and the camera is not at 100%.
+- **Measure at 100%** (`Shift 0`), or divide the scale out. The canvas scales
+  the page, so anything reading `getBoundingClientRect` at 81% zoom reports 81%
+  of the truth — a 24px control measures 2.62px at fit-all. `window.__labScale()`
+  is that number, so `rect.width / __labScale(screenId)` is the real one, and
+  `?only=` sidesteps it entirely. The HUD warns when tools are mounted off 100%.
+- **The keyboard is not scoped, and cannot be.** Four screens in one document
+  means a bare `window.addEventListener('keydown')` has all four answering one
+  keypress. Gate on the screen's own state: `root.dataset.active === 'true'`,
+  or arm and disarm on the `lab:active` and `lab:inactive` events the lab fires
+  on your root. `window.__labWhere.active()` names the screen that owns it.
 - **A file using inline `on*` handlers keeps the global scope.** Wrapping its
   scripts would put those handlers out of reach, so it opts out of id scoping
   and `getElementById` finds whichever screen mounted first. The console names
   the screen when this happens.
 - **`window.__lab` is yours.** The lab uses `__labScreens` and `__labWhere`, so
   a prototype instrumented for a Playwright driver keeps its own readouts.
+- **The lab's own demo screens stay out of the way.** Once it is pointed at a
+  folder, `feed`, `playground`, the hard cases and the html samples do not
+  mount — they are there to exercise the contract, not to sit beside the work.
+  `--demos` brings them back.
 - **A folder can ask for a shadow root** with `lab.json` beside its pages:
   `{ "isolate": true }`. Stronger isolation, at the cost of cutting the file's
   scripts off from `document.getElementById`. Light DOM is the default for that

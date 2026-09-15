@@ -53,6 +53,36 @@ export function whereAt(x: number, y: number): Where | null {
   return whereIs(document.elementFromPoint(x, y));
 }
 
+/**
+ * How much the canvas is scaling a screen right now.
+ *
+ * Every client rect inside a screen comes back multiplied by this. A 24px
+ * control measures 2.62px at fit-all zoom, and a prototype that mixes a
+ * measured rect with a `translate()` in CSS pixels is wrong by the same
+ * factor — which looks like a maths bug and is not one.
+ *
+ * Taken from the frame's rendered width against the width it was laid out at,
+ * so it is the number actually applied rather than the number the camera
+ * intends.
+ */
+export function scaleOf(screenId?: string): number {
+  const root = screenId
+    ? document.querySelector(`[data-lab-body="${CSS.escape(screenId)}"]`)
+    : document.querySelector('[data-lab-body]');
+  const group = root?.closest('[data-screen-id]') as HTMLElement | null;
+  if (!group) return 1;
+  const laid = Number.parseFloat(group.style.width);
+  const shown = group.getBoundingClientRect().width;
+  if (!Number.isFinite(laid) || laid <= 0 || shown <= 0) return 1;
+  return shown / laid;
+}
+
+/** The screen the canvas is locked into, or null in explore mode. */
+export function activeScreen(): string | null {
+  const root = document.querySelector('[data-lab-body][data-active="true"]');
+  return root?.getAttribute('data-lab-body') ?? null;
+}
+
 /** Every screen on the canvas, as id to file. */
 export function screenFiles(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -69,11 +99,24 @@ declare global {
       is: typeof whereIs;
       at: typeof whereAt;
       files: typeof screenFiles;
+      /** The scale every client rect inside a screen is multiplied by. */
+      scale: typeof scaleOf;
+      /** Which screen owns the keyboard right now, if any. */
+      active: typeof activeScreen;
     };
+    /** The canvas scale, as its own name because it is the one people want. */
+    __labScale?: typeof scaleOf;
   }
 }
 
 /** Publish it, so a tool that knows nothing about the lab can still ask. */
 export function publishWhere(): void {
-  window.__labWhere = { is: whereIs, at: whereAt, files: screenFiles };
+  window.__labWhere = {
+    is: whereIs,
+    at: whereAt,
+    files: screenFiles,
+    scale: scaleOf,
+    active: activeScreen,
+  };
+  window.__labScale = scaleOf;
 }

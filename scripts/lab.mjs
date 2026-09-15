@@ -23,6 +23,7 @@ if (flags.includes('--help') || flags.includes('-h')) {
   npm run lab -- <folder>        every .html in that folder, on one canvas
   npm run lab                    just the lab's own screens
   npm run lab -- <folder> --port 5200
+  npm run lab -- <folder> --demos   keep the lab's own demo screens too
 
   The folder is read, never written. Duplicate, delete and rename are the
   lab's own screens only — it will not touch work that lives somewhere else.
@@ -74,6 +75,9 @@ if (target) {
   }
 
   env['LAB_SCREENS'] = root;
+  // The lab's own screens are for testing the lab, not for sitting beside the
+  // work you came to look at. Opt in when you need them.
+  if (flags.includes('--demos')) env['LAB_DEMOS'] = '1';
   process.stdout.write(`\n  ${pages.length} page${pages.length === 1 ? '' : 's'} from ${root}\n`
     + `  ${pages.slice(0, 6).join(', ')}${pages.length > 6 ? `, and ${pages.length - 6} more` : ''}\n`);
 }

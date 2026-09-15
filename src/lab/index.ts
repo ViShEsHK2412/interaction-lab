@@ -6,3 +6,4 @@ export { InteractionLab } from './interaction-lab';
 export { useScreen } from './screen-context';
 export type { ScreenState } from './screen-context';
 export type { ScreenDef } from './screens';
+export { OnlyScreen, onlyScreenId } from './only-screen';
