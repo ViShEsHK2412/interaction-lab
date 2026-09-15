@@ -140,7 +140,7 @@ describe('scopeSelectorList', () => {
 
   it('handles each half of a list independently', () => {
     expect(tidy(scopeSelectorList('html, body, .card')))
-      .toBe(`${BODY_SCOPE}, ${BODY_SCOPE}, ${BODY_SCOPE} .card`);
+      .toBe(`${BODY_SCOPE}, ${BODY_SCOPE}, ${BODY_SCOPE} .card, ${BODY_SCOPE}.card`);
   });
 
   it('does not scope a rule that is already scoped', () => {
@@ -149,7 +149,8 @@ describe('scopeSelectorList', () => {
   });
 
   it('leaves a class that merely starts with the word body alone', () => {
-    expect(tidy(scopeSelectorList('.body-copy'))).toBe(`${BODY_SCOPE} .body-copy`);
+    expect(tidy(scopeSelectorList('.body-copy')))
+      .toBe(`${BODY_SCOPE} .body-copy, ${BODY_SCOPE}.body-copy`);
     expect(tidy(scopeSelectorList('bodyguard'))).toBe(`${BODY_SCOPE} bodyguard`);
   });
 
@@ -292,6 +293,49 @@ describe('renameKeyframes', () => {
   });
 });
 
+describe('a head of attributes or classes is folded onto the root', () => {
+  /*
+   * The bug: nobody writes `html[data-theme="dark"] .card`.
+   *
+   * They write `[data-theme="dark"] .card`, and that head is the document
+   * root — which here is the screen's own root element. Scoped only as a
+   * descendant it needs a `[data-theme]` *inside* the screen, which never
+   * exists, so every theme, `.dark`, `[dir="rtl"]` and `[data-density]` rule
+   * in every prototype died silently.
+   */
+  it('folds an attribute head, and keeps the descendant form too', () => {
+    expect(tidy(scopeSelectorList('[data-theme="dark"] .card')))
+      .toBe(`${BODY_SCOPE} [data-theme="dark"] .card, ${BODY_SCOPE}[data-theme="dark"] .card`);
+  });
+
+  it('folds a class head, which is how most themes are written', () => {
+    expect(tidy(scopeSelectorList('.dark .card')))
+      .toBe(`${BODY_SCOPE} .dark .card, ${BODY_SCOPE}.dark .card`);
+  });
+
+  it('folds a compound of both', () => {
+    expect(tidy(scopeSelectorList('[dir="rtl"].compact p')))
+      .toBe(`${BODY_SCOPE} [dir="rtl"].compact p, ${BODY_SCOPE}[dir="rtl"].compact p`);
+  });
+
+  it('leaves a tag head alone — that named something specific', () => {
+    expect(tidy(scopeSelectorList('h1 .card'))).toBe(`${BODY_SCOPE} h1 .card`);
+  });
+
+  it('leaves an id head alone', () => {
+    expect(tidy(scopeSelectorList('#app .card'))).toBe(`${BODY_SCOPE} #app .card`);
+  });
+
+  it('leaves a pseudo head alone', () => {
+    expect(tidy(scopeSelectorList(':is(a, b) .card'))).toBe(`${BODY_SCOPE} :is(a, b) .card`);
+  });
+
+  it('does not fold a root head, which is already handled', () => {
+    expect(tidy(scopeSelectorList('body.dark .card')))
+      .toBe(`${BODY_SCOPE}.dark .card`);
+  });
+});
+
 describe('scopeCss', () => {
   it('rewrites custom properties onto the screen root', () => {
     expect(tidy(scopeCss(':root { --bg: #000; }')))
@@ -323,7 +367,8 @@ describe('scopeCss', () => {
       '@media screen { @supports (display: grid) { .g { display: grid; } } }',
     ));
     expect(out).toBe(
-      `@media screen { @supports (display: grid) { ${BODY_SCOPE} .g { display: grid; } } }`,
+      '@media screen { @supports (display: grid) { '
+      + `${BODY_SCOPE} .g, ${BODY_SCOPE}.g { display: grid; } } }`,
     );
   });
 
@@ -335,7 +380,10 @@ describe('scopeCss', () => {
 
   it('does not read a brace inside a string as a block', () => {
     const out = tidy(scopeCss('[data-note="{not a block}"] { color: red; }'));
-    expect(out).toBe(`${BODY_SCOPE} [data-note="{not a block}"] { color: red; }`);
+    expect(out).toBe(
+      `${BODY_SCOPE} [data-note="{not a block}"], `
+      + `${BODY_SCOPE}[data-note="{not a block}"] { color: red; }`,
+    );
   });
 
   it('does not read a brace inside a declaration string as a block', () => {
@@ -354,7 +402,9 @@ describe('scopeCss', () => {
     // selector that can never match, and the file loses its theme.
     const out = tidy(scopeCss('.a, /* note */ body { color: red; }'));
     // The comment is kept, ahead of the rule rather than inside its selector.
-    expect(out).toBe(`/* note */ ${BODY_SCOPE} .a, ${BODY_SCOPE} { color: red; }`);
+    expect(out).toBe(
+      `/* note */ ${BODY_SCOPE} .a, ${BODY_SCOPE}.a, ${BODY_SCOPE} { color: red; }`,
+    );
   });
 
   it('survives an unterminated block rather than throwing', () => {
@@ -429,7 +479,7 @@ describe('scopeCss', () => {
 
   it('handles a comment with a comma in front of a selector list', () => {
     const out = tidy(scopeCss('/* one, two */ .a, .b { color: red; }'));
-    expect(out).toContain(`${BODY_SCOPE} .a, ${BODY_SCOPE} .b`);
+    expect(out).toContain(`${BODY_SCOPE} .a, ${BODY_SCOPE}.a, ${BODY_SCOPE} .b`);
   });
 
   it('scopes a rule keyed on the root’s own state', () => {

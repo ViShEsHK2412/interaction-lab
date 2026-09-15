@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useScreen } from '../screen-context';
 import {
-  BODY_ATTR, cssSuffix, parseHtmlDocument, renameKeyframes, resolveAssetUrl, scopeCss,
-  scopeFor, usesInlineHandlers, wrapScript,
+  BODY_ATTR, cssSuffix, parseHtmlDocument, renameKeyframes, resolveAssetUrl, rewriteCssUrls,
+  scopeCss, scopeFor, usesInlineHandlers, wrapScript,
 } from './html-screens';
 
 /**
@@ -30,7 +30,14 @@ declare global {
  * real document, bound to it, so `createElement`, `body` and `currentScript`
  * are untouched.
  */
-function scopedDocument(root: HTMLElement): Document {
+interface ScreenLifecycle {
+  /** False until this screen's own scripts have finished running. */
+  ready: boolean;
+  /** Listeners waiting for a DOMContentLoaded that already happened. */
+  waiting: { type: string; fn: EventListenerOrEventListenerObject }[];
+}
+
+function scopedDocument(root: HTMLElement, life: ScreenLifecycle): Document {
   return new Proxy(document, {
     get(target, prop) {
       switch (prop) {
@@ -44,6 +51,46 @@ function scopedDocument(root: HTMLElement): Document {
           return (cls: string) => root.getElementsByClassName(cls);
         case 'getElementsByTagName':
           return (tag: string) => root.getElementsByTagName(tag);
+
+        /*
+         * The root of the document, as this screen means it.
+         *
+         * A prototype toggles a theme with
+         * `document.documentElement.dataset.theme = 'dark'`. Falling through,
+         * that writes to the lab's own `<html>` — one screen restyles the host
+         * and every sibling on the canvas, and its own themed rules still do
+         * not match, because they were scoped to this screen. Both halves of
+         * the same failure. `body` goes the same way for the same reason.
+         */
+        case 'documentElement':
+        case 'body':
+          return root;
+
+        /*
+         * Still loading, until this screen's scripts have run.
+         *
+         * They are appended long after the host document finished, so the
+         * truthful answer is 'complete' and the consequence is that
+         * `DOMContentLoaded` has already been and gone. The single commonest
+         * line in any prototype — `document.addEventListener('DOMContentLoaded',
+         * init)` — then never runs, and the file looks dead with no error.
+         */
+        case 'readyState':
+          return life.ready ? 'complete' : 'loading';
+
+        case 'addEventListener':
+          return (
+            type: string,
+            fn: EventListenerOrEventListenerObject,
+            opts?: boolean | AddEventListenerOptions,
+          ) => {
+            if ((type === 'DOMContentLoaded' || type === 'readystatechange') && !life.ready) {
+              life.waiting.push({ type, fn });
+              return;
+            }
+            document.addEventListener(type, fn, opts);
+          };
+
         default: {
           const value = Reflect.get(target, prop) as unknown;
           return typeof value === 'function'
@@ -53,6 +100,39 @@ function scopedDocument(root: HTMLElement): Document {
       }
     },
   }) as Document;
+}
+
+/**
+ * Tell a screen the page is ready, once its own scripts have run.
+ *
+ * Fired on the screen's root rather than the document, so one screen becoming
+ * ready is not an event every other screen's listeners can see.
+ */
+function announceReady(root: HTMLElement, life: ScreenLifecycle): void {
+  if (life.ready) return;
+  life.ready = true;
+  const waiting = life.waiting.splice(0);
+  for (const { type, fn } of waiting) {
+    const event = new Event(type === 'readystatechange' ? 'readystatechange' : 'DOMContentLoaded');
+    try {
+      if (typeof fn === 'function') fn.call(root, event);
+      else fn.handleEvent(event);
+    } catch (error) {
+      console.error('[lab] a screen threw while handling DOMContentLoaded', error);
+    }
+  }
+}
+
+/** Per-screen readiness, looked up by id when a script asks through the proxy. */
+const lifecycles = new Map<string, ScreenLifecycle>();
+
+/** Whether a URL is ours to read, so its text can be scoped rather than linked. */
+function sameOrigin(url: string): boolean {
+  try {
+    return new URL(url, document.baseURI).origin === location.origin;
+  } catch {
+    return false;
+  }
 }
 
 export interface HtmlScreenProps {
@@ -124,13 +204,70 @@ export function HtmlScreen({ screenId, html, base, isolate }: HtmlScreenProps) {
           : renameKeyframes(scopeCss(sheet.value, scopeFor(screenId)), cssSuffix(screenId));
         root.appendChild(style);
       } else {
-        // A stylesheet the file links out to. Left alone: rewriting a remote
-        // sheet would mean fetching and re-parsing it, and a prototype's
-        // linked sheet is nearly always a font.
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = resolveAssetUrl(sheet.value, base);
-        root.appendChild(link);
+        const href = resolveAssetUrl(sheet.value, base);
+        /*
+         * A linked sheet gets the same treatment as an inline one.
+         *
+         * It used to be appended as a `<link>` and left alone, which meant a
+         * `tokens.css` declaring `:root { --bg }` landed on the lab's own root
+         * and every screen beside it — and two variants linking different
+         * sheets simply overwrote each other. Everything the scoper exists to
+         * prevent, reintroduced by the tag it did not cover.
+         *
+         * Same-origin only. A font from a CDN has nothing to scope and cannot
+         * be read cross-origin anyway, so it stays a plain `<link>`.
+         */
+        if (isolate || !sameOrigin(href)) {
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = href;
+          root.appendChild(link);
+        } else {
+          const style = document.createElement('style');
+          style.dataset['from'] = href;
+          root.appendChild(style);
+          /*
+           * Ask for CSS, and check that CSS is what came back.
+           *
+           * A dev server can answer the same URL two ways depending on who is
+           * asking: Vite hands a `<link>` real CSS and hands `fetch` a
+           * JavaScript module that injects the styles itself, because the
+           * Accept header differs. Fetching without saying so scopes a module
+           * as though it were a stylesheet — no error, no styles, and a
+           * `<style>` full of JavaScript to find later.
+           *
+           * So the header is explicit, and the answer is checked. Anything
+           * that is not CSS falls back to the plain `<link>` the browser knows
+           * how to ask for, unscoped but working.
+           */
+          void fetch(href, { headers: { Accept: 'text/css,*/*;q=0.1' } })
+            .then(async (res) => {
+              if (!res.ok) throw new Error(`${res.status}`);
+              const type = res.headers.get('content-type') ?? '';
+              if (!/text\/css/i.test(type)) throw new Error(`served as ${type || 'no type'}`);
+              return res.text();
+            })
+            .then((text) => {
+              // The mount may have been torn down while this was in flight.
+              if (!style.isConnected) return;
+              style.textContent = renameKeyframes(
+                scopeCss(rewriteCssUrls(text, href), scopeFor(screenId)),
+                cssSuffix(screenId),
+              );
+            })
+            .catch((error: unknown) => {
+              if (!style.isConnected) return;
+              console.warn(
+                `[lab] ${href} could not be read as CSS, so it is linked unscoped `
+                + '— its :root rules will reach the whole canvas.',
+                error,
+              );
+              const link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = href;
+              style.replaceWith(link);
+            });
+        }
       }
     }
 
@@ -146,16 +283,43 @@ export function HtmlScreen({ screenId, html, base, isolate }: HtmlScreenProps) {
      * exactly what makes `document.getElementById` inside a prototype keep
      * working — as long as the mount is not behind a shadow root.
      */
+    /*
+     * One lifecycle per screen, so readiness is per screen.
+     *
+     * The canvas mounts many at once and each finishes on its own; a shared
+     * flag would tell the fifth screen the page was ready before its own
+     * scripts had run.
+     */
+    const life: ScreenLifecycle = { ready: false, waiting: [] };
+    lifecycles.set(screenId, life);
+
     window.__labScreens = { ...window.__labScreens, [screenId]: body };
     // Reads the registry at call time rather than closing over it: screens
     // mount and unmount independently, and a captured copy would be stale for
     // every screen that arrived after this one.
-    window.__labScope = (id: string) => scopedDocument(window.__labScreens?.[id] ?? body);
+    window.__labScope = (id: string) => scopedDocument(
+      window.__labScreens?.[id] ?? body,
+      lifecycles.get(id) ?? life,
+    );
 
-    // A file that wires buttons up with `onclick=` needs its functions to stay
-    // global, so it keeps the raw scope and the shared-id risk that comes with
-    // it. Everything else gets a `document` that means this screen.
+    /*
+     * A file that wires buttons up with `onclick=` needs its functions to stay
+     * global, so it keeps the raw scope and the shared-id risk that comes with
+     * it. Everything else gets a `document` that means this screen.
+     *
+     * Said out loud, because the consequence is invisible and surprising: one
+     * `onclick=` anywhere in the markup sends every `getElementById` in the
+     * file back to whichever screen mounted first. A page that works alone and
+     * misbehaves on a canvas of ten variants is a bad afternoon otherwise.
+     */
     const scopeScripts = !usesInlineHandlers(parsed.body);
+    if (!scopeScripts && parsed.scripts.some((spec) => !spec.src)) {
+      console.warn(
+        `[lab] ${screenId} uses inline on* handlers, so its scripts share the `
+        + 'global scope. getElementById will find whichever screen mounted '
+        + 'first. Move the handlers to addEventListener to scope it.',
+      );
+    }
 
     const added: HTMLScriptElement[] = [];
     for (const spec of parsed.scripts) {
@@ -172,7 +336,17 @@ export function HtmlScreen({ screenId, html, base, isolate }: HtmlScreenProps) {
       added.push(script);
     }
 
+    /*
+     * Now the screen is as loaded as it is going to get.
+     *
+     * A microtask rather than immediately, so a script that registers a
+     * listener and then keeps working still has its whole body run first —
+     * the same order it would see in a real document.
+     */
+    queueMicrotask(() => announceReady(body, life));
+
     return () => {
+      lifecycles.delete(screenId);
       /*
        * Tell the screen it is going away, before taking it away.
        *

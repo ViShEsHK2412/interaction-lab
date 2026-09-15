@@ -10,4 +10,6 @@ declare module 'virtual:lab-screens' {
   export const root: string | null;
   /** Keyed by path relative to that root, forward slashes. */
   export const pages: Record<string, { html: string; base: string }>;
+  /** Whether that folder asked for a shadow root, via `lab.json`. */
+  export const isolate: boolean;
 }

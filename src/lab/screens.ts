@@ -1,6 +1,8 @@
 import type { ComponentType } from 'react';
 import type { ScreenManifest } from './screen-manifest';
-import { pages as externalPages, root as externalRoot } from 'virtual:lab-screens';
+import {
+  isolate as externalIsolate, pages as externalPages, root as externalRoot,
+} from 'virtual:lab-screens';
 import {
   DEFAULT_HTML_SIZE, firstFreeRow, htmlScreenId, orderHtmlFiles, tilePosition, titleFromSlug,
 } from './core/html-screens';
@@ -259,7 +261,8 @@ function build(): ScreenDef[] {
       html: page.html,
       htmlFile: rel,
       base: page.base,
-      isolate: false,
+      // Light DOM unless the folder's own `lab.json` asks otherwise.
+      isolate: externalIsolate,
       solo: false,
       external: true,
     });

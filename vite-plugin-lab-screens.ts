@@ -1,4 +1,4 @@
-import { readdirSync, realpathSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Plugin } from 'vite';
 
@@ -156,7 +156,10 @@ export function labScreens(): Plugin {
 
     load(id) {
       if (id !== RESOLVED) return null;
-      if (!root) return 'export const root = null;\nexport const pages = {};\n';
+      if (!root) {
+        return 'export const root = null;\nexport const pages = {};\n'
+          + 'export const isolate = false;\n';
+      }
 
       const found = scan(root);
       const imports = found
@@ -172,8 +175,26 @@ export function labScreens(): Plugin {
         })
         .join('\n');
 
+      /*
+       * A folder can ask for a shadow root of its own.
+       *
+       * Light DOM is the default because a shadow root cuts a file's scripts
+       * off from `document.getElementById`, which is how a hand-written
+       * prototype finds itself. But a self-contained folder that does not
+       * care gets far stronger isolation for free, so a `lab.json` beside the
+       * pages can say `{ "isolate": true }` and have it.
+       */
+      let isolate = false;
+      try {
+        const manifest = JSON.parse(
+          readFileSync(resolve(root, 'lab.json'), 'utf8'),
+        ) as { isolate?: unknown };
+        isolate = manifest.isolate === true;
+      } catch { /* no manifest, or unreadable: the default stands */ }
+
       return `${imports}
 export const root = ${JSON.stringify(root)};
+export const isolate = ${JSON.stringify(isolate)};
 export const pages = {
 ${entries}
 };

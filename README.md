@@ -159,6 +159,8 @@ vanilla JS can both reach them:
 | `--frame-width`, `--frame-height` | the frame's size, in page units |
 | `lab:escape` event | cancel it to keep Escape; the lab exits otherwise |
 | `lab:unmount` event | the screen is going away: stop your timers, loops and observers |
+| `document.documentElement`, `document.body` | your screen's root, not the lab's |
+| `DOMContentLoaded` | fires once your screen's scripts have run |
 | `window.__labScreens[id]` | every mounted screen's root, for a test driver |
 
 A file's own images, fonts, stylesheets and scripts resolve against the folder
@@ -174,6 +176,21 @@ the lab cannot reach inside a script it executed. A screen that ignores this
 keeps running against a detached tree after it is replaced — and every mount is
 torn down and rebuilt once in development, so it happens immediately rather
 than rarely.
+
+A theme written the way people write themes — `[data-theme="dark"] .card`, or
+`.dark .card` — is folded onto the screen's own root as well as kept as a
+descendant, because that head means the document root and the document root
+here is your screen. Toggling it works too: `document.documentElement` and
+`document.body` are your screen's root, so a prototype that sets
+`dataset.theme` themes itself rather than the whole canvas.
+
+A `<link>` to a local stylesheet is read and scoped exactly like an inline
+`<style>`. Cross-origin sheets — a font from a CDN — stay a plain link, since
+there is nothing to scope and no way to read them anyway.
+
+One thing that is not scoped and says so: a file using inline `on*` handlers
+keeps the global scope, because wrapping its scripts would put those handlers
+out of reach. The console says which screen and why.
 
 `window.__lab` is deliberately left alone: a prototype that instruments itself
 for a Playwright driver almost always claims that name for its own readouts,

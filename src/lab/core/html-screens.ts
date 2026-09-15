@@ -174,6 +174,16 @@ export function splitSelectorList(selectors: string): string[] {
   return out;
 }
 
+/**
+ * A leading compound made only of attribute selectors and classes.
+ *
+ * `[data-theme="dark"]`, `.dark`, `[dir="rtl"].compact` — the shapes people
+ * actually use to theme a page, none of which name a tag. A tag, an id or a
+ * pseudo at the head means something more specific was meant, and is left
+ * alone.
+ */
+const ATTR_OR_CLASS_HEAD = /^(?:\[[^\]]*\]|\.[\w-]+)+(?![\w([])/;
+
 /** The head of a selector, when that head is the document root. */
 const ROOT_HEAD = /^(?::root|html|body)(?![\w-])((?:\.[\w-]+|#[\w-]+|\[[^\]]*\]|:{1,2}[\w-]+(?:\([^)]*\))?)*)/;
 
@@ -211,6 +221,24 @@ export function scopeSelectorList(selectors: string, scope = BODY_SCOPE): string
         return ' ' + scope + suffix + rest;
       }
       head = null;
+
+      /*
+       * A head made only of attributes and classes is probably the root.
+       *
+       * Almost nobody writes `html[data-theme="dark"] .card`. They write
+       * `[data-theme="dark"] .card`, or `.dark .card` — and that head is the
+       * document root, which here is the screen's own root element. Scoped as
+       * a descendant it needs a `[data-theme]` *inside* the screen, which
+       * never exists, so every theme, `.dark`, `[dir="rtl"]` and
+       * `[data-density]` rule in every prototype died without a word.
+       *
+       * Both forms are emitted: the descendant one, in case the attribute
+       * really is on something inside, and the folded one that treats the head
+       * as the root. Additive, so a selector that already worked still does.
+       */
+      if (ATTR_OR_CLASS_HEAD.test(sel)) {
+        return ' ' + scope + ' ' + sel + ', ' + scope + sel;
+      }
 
       // A bare `*` would otherwise reach out of the screen entirely.
       return ' ' + scope + ' ' + sel;
