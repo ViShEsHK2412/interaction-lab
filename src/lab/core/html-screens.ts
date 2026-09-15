@@ -450,11 +450,64 @@ export function resolveAssetUrl(value: string, base: string): string {
   const url = value.trim();
   if (!url) return value;
   if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#|\/)/i.test(url)) return value;
+  const from = absoluteBase(base);
+  if (!from) return value;
   try {
-    return new URL(url, base).href;
+    return new URL(url, from).href;
   } catch {
     return value;
   }
+}
+
+/**
+ * A base `new URL` will actually accept.
+ *
+ * `new URL('./x.css', '/@fs/C:/…/')` throws: the base has to be absolute, and
+ * a root-relative path is not. A folder outside the project is served under
+ * `/@fs/…`, so that is exactly the base every external screen was handed —
+ * every relative reference in it threw, the catch returned the value
+ * untouched, and nothing was rebased at all. Stylesheets, images, fonts,
+ * scripts: all of them, silently, in the one case the lab exists for.
+ *
+ * The screens inside this project were fine, which is what hid it: their base
+ * comes from `new URL(..., import.meta.url).href` and is absolute already. The
+ * test written for this covered that case and passed.
+ */
+function absoluteBase(base: string): string | null {
+  if (!base) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(base)) return base;
+  if (typeof document !== 'undefined') {
+    try {
+      return new URL(base, document.baseURI).href;
+    } catch {
+      warnOnce(base);
+      return null;
+    }
+  }
+  warnOnce(base);
+  return null;
+}
+
+/**
+ * Say so, once, when a base cannot be used.
+ *
+ * This failing silently is what made it expensive. A relative URL that is not
+ * rebased still resolves — against the lab — so the browser asks for a file
+ * that is not there, a dev server with an SPA fallback answers 200 with HTML,
+ * a stylesheet of the wrong type is dropped without an error, and the page
+ * renders unstyled while its scripts run perfectly. Every signal reads green.
+ * One line here is the difference.
+ */
+const warned = new Set<string>();
+
+function warnOnce(base: string): void {
+  if (warned.has(base)) return;
+  warned.add(base);
+  console.warn(
+    `[lab] Cannot resolve a screen's files against "${base}" — it is not an `
+    + 'absolute URL, so nothing relative in that screen will be rebased. '
+    + 'Images, fonts and linked stylesheets will silently come from the lab.',
+  );
 }
 
 /**

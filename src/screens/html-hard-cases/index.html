@@ -7,6 +7,7 @@
   <!-- Every construct here is one the CSS scoper has to survive. If the
        stylesheet below still applies, and none of it reaches the lab's own
        chrome, the rewrite is doing its job. -->
+  <link rel="stylesheet" href="./linked.css">
   <style>
     :root {
       --bg: #0c0f14;
@@ -113,6 +114,7 @@
     <span class="tally" id="tally">—</span>
     <span class="pulse" id="pulser" style="color:var(--dim)">animating</span>
     <img id="asset" src="./asset-probe.svg" alt="" width="16" height="16">
+    <span id="linked-probe" style="font-size:11px;color:var(--dim)">linked</span>
   </div>
 
   <div class="grid" id="out"></div>
@@ -302,6 +304,15 @@
             if (!img) return { ok: false, value: 'no probe image' };
             return { ok: img.complete && img.naturalWidth > 0,
                      value: (img.naturalWidth > 0 ? 'loaded from ' : 'FAILED from ') + img.currentSrc };
+          });
+
+      add('A linked stylesheet beside me applies',
+          'The lab lifts every <link> out of the file and re-homes it, so its href has to be rebased. An unrebased one asks the lab for a file that is not there — and a dev server answers 200 with HTML, which the browser drops without an error.',
+          function () {
+            var el = document.getElementById('linked-probe');
+            if (!el) return { ok: false, value: 'no probe' };
+            var outline = getComputedStyle(el).outlineColor;
+            return { ok: outline === 'rgb(76, 195, 138)', value: outline };
           });
 
       add('dialkit vanilla: a global survives the mount',

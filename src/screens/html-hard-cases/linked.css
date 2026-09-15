@@ -1,0 +1,3 @@
+/* Linked, not inline: the lab lifts this out of the file and re-homes it, so
+   its href has to be rebased or the browser asks the lab for it instead. */
+[data-lab-body] #linked-probe { outline: 3px solid #4cc38a; }

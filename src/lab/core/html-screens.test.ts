@@ -522,6 +522,54 @@ describe('resolveAssetUrl', () => {
   });
 });
 
+describe('resolveAssetUrl with a base that is not absolute', () => {
+  /*
+   * The bug this exists for.
+   *
+   * A folder outside the project is served under `/@fs/...`, and that is what
+   * the plugin hands every screen in it as a base. `new URL('./x.css', '/@fs/')`
+   * throws — the base has to be absolute — so every relative reference in every
+   * external screen was returned untouched and resolved against the lab
+   * instead. Stylesheets, images, fonts, scripts, all of them, in the one case
+   * the lab exists for. The screens inside the project were fine, and the test
+   * written for this covered those.
+   */
+  const rootRelative = '/@fs/C:/work/cards/';
+
+  it('resolves against the page when the base is root-relative', () => {
+    const real = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = { baseURI: 'http://localhost:5190/' };
+    try {
+      expect(resolveAssetUrl('./tokens.css', rootRelative))
+        .toBe('http://localhost:5190/@fs/C:/work/cards/tokens.css');
+      expect(resolveAssetUrl('card.png', rootRelative))
+        .toBe('http://localhost:5190/@fs/C:/work/cards/card.png');
+    } finally {
+      (globalThis as { document?: unknown }).document = real;
+    }
+  });
+
+  it('carries through rewriteCssUrls, which shares the same resolver', () => {
+    const real = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = { baseURI: 'http://localhost:5190/' };
+    try {
+      expect(rewriteCssUrls('a { background: url(bg.png); }', rootRelative))
+        .toContain('http://localhost:5190/@fs/C:/work/cards/bg.png');
+    } finally {
+      (globalThis as { document?: unknown }).document = real;
+    }
+  });
+
+  it('returns the value rather than throwing when there is no page to resolve against', () => {
+    expect(() => resolveAssetUrl('./x.css', rootRelative)).not.toThrow();
+    expect(resolveAssetUrl('./x.css', rootRelative)).toBe('./x.css');
+  });
+
+  it('still leaves absolute references alone', () => {
+    expect(resolveAssetUrl('https://x/y.css', rootRelative)).toBe('https://x/y.css');
+  });
+});
+
 describe('resolveSrcset', () => {
   const base = 'http://localhost:5190/src/screens/cards/';
 
