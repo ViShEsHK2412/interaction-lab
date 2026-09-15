@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { publishWhere } from './where';
 
 /**
  * The in-page tools, mounted once for the whole canvas.
@@ -25,6 +26,15 @@ import type { ComponentType } from 'react';
 const enabled = import.meta.glob<{ Tools: ComponentType }>('./enabled.tsx', { eager: true });
 
 const Tools = Object.values(enabled)[0]?.Tools ?? null;
+
+/*
+ * Published whether or not any tool is installed.
+ *
+ * A Playwright driver, a console, or a tool the lab has never heard of can all
+ * ask which file an element belongs to. That is worth having on its own — the
+ * canvas is the only thing that knows.
+ */
+publishWhere();
 
 export function Overlays() {
   if (!Tools) return null;

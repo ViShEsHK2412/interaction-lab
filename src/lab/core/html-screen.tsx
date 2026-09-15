@@ -138,6 +138,8 @@ function sameOrigin(url: string): boolean {
 export interface HtmlScreenProps {
   screenId: string;
   html: string;
+  /** The file this screen is, relative to wherever the lab was pointed. */
+  file: string;
   /** The folder the file came from, so its own assets still resolve. */
   base: string;
   /** Mount behind a shadow root instead of scoping the CSS. Off by default. */
@@ -153,7 +155,7 @@ export interface HtmlScreenProps {
  * a canvas exists to make. One document keeps every screen reachable by one
  * pass of one tool.
  */
-export function HtmlScreen({ screenId, html, base, isolate }: HtmlScreenProps) {
+export function HtmlScreen({ screenId, html, file, base, isolate }: HtmlScreenProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const { active, visible, frameSize, setEscapeInterceptor } = useScreen();
 
@@ -183,6 +185,15 @@ export function HtmlScreen({ screenId, html, base, isolate }: HtmlScreenProps) {
     // stylesheet scoped to the bare attribute is scoped to every screen at
     // once and the last one mounted wins every token.
     body.setAttribute(BODY_ATTR, screenId);
+    /*
+     * The file, on the element.
+     *
+     * Every screen is in one document, so a tool that annotates an element
+     * reports a path like `. > div > div > .stage` — true, and useless on a
+     * canvas of ten variants of the same file. The identity has to be *in* the
+     * DOM for anything to find it without the lab's cooperation.
+     */
+    body.setAttribute('data-lab-file', file);
     /*
      * Fill the frame.
      *

@@ -70,7 +70,25 @@ const TOOLS = [
     react: 18,
     notice: 'PolyForm Shield 1.0.0 — usable, not vendorable',
     imports: "import { Agentation } from 'agentation';",
-    mount: '<Agentation />',
+    /*
+     * Wired, not bare.
+     *
+     * agentation reports an element as a path, and a path cannot say which of
+     * ten variants of one file it came from — they are all in one document.
+     * The lab knows, so it answers: every annotation is stamped with its file
+     * and the copied markdown opens with the canvas's own map.
+     */
+    mount: [
+      '<Agentation',
+      '        copyToClipboard={false}',
+      '        onAnnotationAdd={(a) => {',
+      '          const file = fileForAnnotation(a);',
+      '          if (file) a.comment = `[${file}] ${a.comment || ""}`;',
+      '        }}',
+      '        onCopy={(md) => { void navigator.clipboard.writeText(withScreenMap(md)); }}',
+      '      />',
+    ].join('\n'),
+    extraImports: "import { fileForAnnotation, withScreenMap } from '../tools/annotations';",
   },
   {
     pkg: 'dialkit',
@@ -143,6 +161,7 @@ const generated = [
   ' * what an iframe per screen would have taken away.',
   ' */',
   ...mounted.map((t) => t.imports),
+  ...mounted.filter((t) => t.extraImports).map((t) => t.extraImports),
   '',
   'export function Tools() {',
   '  return (',
