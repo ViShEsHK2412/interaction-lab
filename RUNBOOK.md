@@ -131,6 +131,10 @@ failing.
   of the truth — a 24px control measures 2.62px at fit-all. `window.__labScale()`
   is that number, so `rect.width / __labScale(screenId)` is the real one, and
   `?only=` sidesteps it entirely. The HUD warns when tools are mounted off 100%.
+- **The toolbar drags.** It starts at the bottom centre, which is also where a
+  prototype puts its dock or action bar, so the two overlap. Drag the bar by
+  its own background — its controls still click — and it stays there across
+  reloads. Double-click it to put it back.
 - **The keyboard is not scoped, and cannot be.** Four screens in one document
   means a bare `window.addEventListener('keydown')` has all four answering one
   keypress. Gate on the screen's own state: `root.dataset.active === 'true'`,

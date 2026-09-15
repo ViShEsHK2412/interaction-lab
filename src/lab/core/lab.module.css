@@ -208,7 +208,15 @@
   font-size: var(--type-body);
   pointer-events: auto;
   box-shadow: var(--shadow-floating);
+  /* The bar itself is the handle; its controls keep their own cursors. */
+  cursor: grab;
+  user-select: none;
 }
+
+.hud:active { cursor: grabbing; }
+
+/* Moved by hand: the inline left/top win, and the centring transform goes. */
+.hud[data-moved] { left: 0; top: 0; }
 
 .hudButton {
   appearance: none;

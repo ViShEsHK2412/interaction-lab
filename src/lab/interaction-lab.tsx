@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  boundsOf, boxesIntersect, createCameraStore, lerpCamera, screenToPage, stepZoom,
+  boundsOf, boxesIntersect, clamp, createCameraStore, lerpCamera, screenToPage, stepZoom,
   snapToDevicePixels, toDomPrecision, viewportCentre, visibleBounds, zoomAbout,
   zoomToBounds, type Box, type Camera,
 } from './core/camera';
@@ -50,6 +50,39 @@ function ownsFolder(def: ScreenDef): boolean {
   if (def.solo) return true;
   toast(`${def.name} is one of several files in ${def.dir}/. Move it to its own folder first.`, 'warn');
   return false;
+}
+
+/**
+ * The toolbar's own position, when it has been moved.
+ *
+ * Its own key rather than part of the layout: where you like the toolbar is
+ * not a property of the screens, and resetting the layout should not move it.
+ */
+const HUD_KEY = 'interaction-lab:hud:v1';
+
+function loadHudAt(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(HUD_KEY);
+    if (!raw) return null;
+    const at = JSON.parse(raw) as { x?: unknown; y?: unknown };
+    // Validated on read: a hand-edited or stale value must not throw at
+    // startup, and must not park the toolbar off screen either.
+    if (typeof at.x !== 'number' || typeof at.y !== 'number') return null;
+    if (!Number.isFinite(at.x) || !Number.isFinite(at.y)) return null;
+    return {
+      x: clamp(at.x, 0, Math.max(0, window.innerWidth - 80)),
+      y: clamp(at.y, 0, Math.max(0, window.innerHeight - 24)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveHudAt(at: { x: number; y: number } | null): void {
+  try {
+    if (at) localStorage.setItem(HUD_KEY, JSON.stringify(at));
+    else localStorage.removeItem(HUD_KEY);
+  } catch { /* storage disabled; the toolbar just starts where it starts */ }
 }
 
 /** How long the camera takes to travel, and the pause that counts as settled. */
@@ -292,6 +325,49 @@ export function InteractionLab() {
 
   const gridRef = useRef<HTMLCanvasElement | null>(null);
   const [canvasColour, setCanvasColour] = useState<string>(loadColour);
+
+  /**
+   * Where the toolbar has been dragged to, or null for where it starts.
+   *
+   * It sits at the bottom centre, which is also where a prototype puts its own
+   * dock or action bar — so the two overlap and read as one control. Rather
+   * than the lab guessing what a screen reserves, move the toolbar out of the
+   * way and leave it there.
+   *
+   * Kept in `localStorage`, because having to move it every reload would be
+   * worse than where it started.
+   */
+  const [hudAt, setHudAt] = useState<{ x: number; y: number } | null>(loadHudAt);
+  const hudRef = useRef<HTMLDivElement | null>(null);
+
+  const onHudDrag = useCallback((e: React.PointerEvent) => {
+    const hud = hudRef.current;
+    if (!hud || e.button !== 0) return;
+    // A press on a control is that control's. Only the bar itself drags.
+    if ((e.target as HTMLElement).closest('button, input, a, [role="button"]')) return;
+
+    const box = hud.getBoundingClientRect();
+    const grab = { x: e.clientX - box.left, y: e.clientY - box.top };
+    e.preventDefault();
+
+    const move = (ev: PointerEvent) => {
+      const w = hud.offsetWidth;
+      const h = hud.offsetHeight;
+      // Kept on screen: a toolbar dragged off the edge is a toolbar you have
+      // to clear localStorage to get back.
+      setHudAt({
+        x: clamp(ev.clientX - grab.x, 0, Math.max(0, window.innerWidth - w)),
+        y: clamp(ev.clientY - grab.y, 0, Math.max(0, window.innerHeight - h)),
+      });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      setHudAt((at) => { saveHudAt(at); return at; });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, []);
   const [swatches, setSwatches] = useState<string[]>(loadSwatches);
   const [colourOpen, setColourOpen] = useState(false);
   const [hexDraft, setHexDraft] = useState(canvasColour);
@@ -1574,7 +1650,26 @@ export function InteractionLab() {
         <div ref={snapLayerRef} />
         <div className={styles.sizeBadge} ref={badgeRef} style={{ display: 'none' }} />
 
-        <div className={styles.hud}>
+        {/*
+          Draggable by its own background. Double-click puts it back, because a
+          toolbar you have moved somewhere unhelpful should not need a trip to
+          localStorage to recover.
+        */}
+        <div
+          className={styles.hud}
+          ref={hudRef}
+          data-moved={hudAt ? '' : undefined}
+          style={hudAt
+            ? { left: hudAt.x, top: hudAt.y, bottom: 'auto', transform: 'none' }
+            : undefined}
+          onPointerDown={onHudDrag}
+          onDoubleClick={(e) => {
+            if ((e.target as HTMLElement).closest('button, input, a')) return;
+            setHudAt(null);
+            saveHudAt(null);
+          }}
+          title="Drag to move. Double-click to put it back."
+        >
           <button
             type="button"
             className={styles.hudButton}
