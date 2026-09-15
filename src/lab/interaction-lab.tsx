@@ -1574,7 +1574,7 @@ export function InteractionLab() {
         <div ref={snapLayerRef} />
         <div className={styles.sizeBadge} ref={badgeRef} style={{ display: 'none' }} />
 
-        <div className={styles.hud}>
+        <div className={styles.hud} data-lab-hud="">
           <button
             type="button"
             className={styles.hudButton}

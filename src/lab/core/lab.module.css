@@ -238,6 +238,29 @@
  * its text goes from secondary to primary rather than staying put: tertiary
  * loses contrast the moment there is a film underneath it.
  */
+/*
+ * Out of the way while a screen has the whole window.
+ *
+ * Filling is the one mode where the collision is guaranteed: the screen *is*
+ * the viewport, so the toolbar is standing on its bottom edge by definition,
+ * and that is exactly where a dock or an action bar lives. It fades rather
+ * than disappears, because the zoom and the way out are both in there — and it
+ * comes straight back on hover or on focus, so the keyboard never loses it.
+ */
+.root[data-mode='fill'] .hud {
+  opacity: 0.16;
+  transition: opacity 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.root[data-mode='fill'] .hud:hover,
+.root[data-mode='fill'] .hud:focus-within {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root[data-mode='fill'] .hud { transition-duration: 0ms; }
+}
+
 .hudButton:hover {
   background: var(--surface-2);
   color: var(--text-primary);

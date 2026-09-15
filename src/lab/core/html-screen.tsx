@@ -157,7 +157,7 @@ export interface HtmlScreenProps {
  */
 export function HtmlScreen({ screenId, html, file, base, isolate }: HtmlScreenProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const { active, visible, frameSize, setEscapeInterceptor } = useScreen();
+  const { active, visible, frameSize, zoom, setEscapeInterceptor } = useScreen();
 
   /**
    * Mount, keyed on the source.
@@ -420,15 +420,69 @@ export function HtmlScreen({ screenId, html, file, base, isolate }: HtmlScreenPr
      * closes the loop: content appears, a scrollbar takes its width, the
      * number corrects itself, and anything reading the property follows.
      */
+    /*
+     * How much of this screen's bottom edge the lab is standing on.
+     *
+     * The toolbar is pinned to the bottom centre of the canvas, which is also
+     * where app chrome naturally goes — docks, action bars, toasts. A screen
+     * has no way to know it is there, so it renders into a strip the lab
+     * covers and the two read as one control. Fifty-two pixels of a filling
+     * screen, measured.
+     *
+     * Reported in the screen's own pixels, not the canvas's, so padding
+     * against it means what it says at any zoom:
+     *
+     *     padding-bottom: var(--lab-chrome-bottom, 0px);
+     *
+     * Zero when nothing overlaps, and absent entirely when the file is opened
+     * on its own — which is why the fallback belongs in the declaration.
+     */
+    const reserve = () => {
+      /*
+       * Only a screen you are actually using reserves anything.
+       *
+       * In explore the frames are thumbnails behind a shield; nothing you do
+       * there depends on the bottom strip, and the overlap measured in the
+       * screen's own units is enormous precisely because it is scaled down —
+       * 328px of reserved padding on a screen nobody is laying out.
+       */
+      if (!active) {
+        body.style.setProperty('--lab-chrome-bottom', '0px');
+        return;
+      }
+      const rb = body.getBoundingClientRect();
+      const scale = rb.width > 0 && body.clientWidth > 0 ? rb.width / body.clientWidth : 1;
+      let covered = 0;
+      for (const chrome of document.querySelectorAll('[data-lab-hud]')) {
+        const cb = chrome.getBoundingClientRect();
+        // Only what actually sits over this screen: the toolbar is centred, so
+        // a frame off to one side is not covered at all.
+        const across = Math.min(rb.right, cb.right) - Math.max(rb.left, cb.left);
+        if (across <= 0) continue;
+        covered = Math.max(covered, rb.bottom - cb.top);
+      }
+      const px = Math.max(0, Math.round(covered / (scale || 1)));
+      body.style.setProperty('--lab-chrome-bottom', `${px}px`);
+    };
+
     const write = () => {
       body.style.setProperty('--frame-width', `${body.clientWidth || frameSize.width}px`);
       body.style.setProperty('--frame-height', `${body.clientHeight || frameSize.height}px`);
+      reserve();
     };
     write();
     const ro = new ResizeObserver(write);
     ro.observe(body);
     return () => ro.disconnect();
-  }, [active, visible, frameSize, screenId]);
+    /*
+     * `zoom` is in here for the reserve, not the size.
+     *
+     * The camera animates after the mode changes, so a value computed on the
+     * React render that caused it is measured mid-flight. The throttled zoom
+     * ticks as the animation runs, which lands the last one on the settled
+     * camera.
+     */
+  }, [active, visible, frameSize, zoom, screenId]);
 
   /**
    * Escape arbitration for a file.
