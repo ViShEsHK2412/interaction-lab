@@ -177,6 +177,22 @@ export function HtmlScreen({ screenId, html, file, base, isolate }: HtmlScreenPr
 
     root.textContent = '';
 
+    /*
+     * An isolated screen says who it is from outside its own shadow.
+     *
+     * The identity attributes go on the screen root, and under `isolate` that
+     * root is inside a shadow tree - where `document.querySelectorAll` cannot
+     * reach it. So the one screen that most needs naming was the one screen
+     * missing from `__labWhere.files()`, and an annotation taken on it came
+     * back with no file at all. The host is in the light DOM and carries the
+     * same two attributes, which costs nothing: the shadow's own rules are
+     * scoped inside it and never match the host.
+     */
+    if (isolate) {
+      host.setAttribute(BODY_ATTR, screenId);
+      host.setAttribute('data-lab-file', file);
+    }
+
     // The screen's own root. Every rule in the file is rewritten to sit under
     // this, and the file's `<body class>` lands on it, so a prototype that
     // themes itself with a body class still themes itself.
@@ -210,9 +226,21 @@ export function HtmlScreen({ screenId, html, file, base, isolate }: HtmlScreenPr
     for (const sheet of parsed.styles) {
       if (sheet.kind === 'text') {
         const style = document.createElement('style');
-        style.textContent = isolate
-          ? sheet.value
-          : renameKeyframes(scopeCss(sheet.value, scopeFor(screenId)), cssSuffix(screenId));
+        /*
+         * Scoped even inside a shadow root, which is not belt and braces.
+         *
+         * An isolated screen used to take its CSS verbatim, on the reasoning
+         * that a shadow root already keeps it in. It does - but the file's
+         * rules are written against a document, and a shadow root has no
+         * `body` and no `:root` for `body { background }` to land on. The
+         * screen came up correct and completely unstyled, which is this
+         * codebase's signature failure. The scoper rewrites exactly those
+         * heads onto the screen's own root, so it is needed here most.
+         */
+        style.textContent = renameKeyframes(
+          scopeCss(sheet.value, scopeFor(screenId)),
+          cssSuffix(screenId),
+        );
         root.appendChild(style);
       } else {
         const href = resolveAssetUrl(sheet.value, base);
@@ -228,7 +256,7 @@ export function HtmlScreen({ screenId, html, file, base, isolate }: HtmlScreenPr
          * Same-origin only. A font from a CDN has nothing to scope and cannot
          * be read cross-origin anyway, so it stays a plain `<link>`.
          */
-        if (isolate || !sameOrigin(href)) {
+        if (!sameOrigin(href)) {
           const link = document.createElement('link');
           link.rel = 'stylesheet';
           link.href = href;

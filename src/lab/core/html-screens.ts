@@ -443,6 +443,24 @@ export function usesInlineHandlers(markup: string): boolean {
 }
 
 /**
+ * Does this file give up its own id space?
+ *
+ * A screen's scripts are wrapped so `document` means that screen, which is
+ * what keeps `id="theme"` in four variants of one file from resolving to
+ * whichever mounted first. A file using inline `on*` handlers cannot be
+ * wrapped — `onclick="save()"` resolves `save` as a global, and a wrapper puts
+ * it out of reach — so that file keeps the shared scope and the collision risk
+ * with it.
+ *
+ * Only true when there is something to lose: a file with no inline scripts has
+ * no lookups to scope, so its handlers cost it nothing.
+ */
+export function sharesGlobalScope(html: string): boolean {
+  if (!usesInlineHandlers(html)) return false;
+  return /<script(?![^>]*\ssrc\s*=)[^>]*>[\s\S]*?\S[\s\S]*?<\/script>/i.test(html);
+}
+
+/**
  * Wrap a script so `document` means "this screen" inside it.
  *
  * Two variants of one card, mounted side by side, both contain `id="title"`,

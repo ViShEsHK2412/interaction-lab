@@ -1,11 +1,12 @@
 import type { ComponentType } from 'react';
 import type { ScreenManifest } from './screen-manifest';
 import {
-  demos as showDemos, isolate as externalIsolate, pages as externalPages,
+  demos as showDemos, pages as externalPages,
   root as externalRoot,
 } from 'virtual:lab-screens';
 import {
-  DEFAULT_HTML_SIZE, firstFreeRow, htmlScreenId, orderHtmlFiles, tilePosition, titleFromSlug,
+  DEFAULT_HTML_SIZE, firstFreeRow, htmlScreenId, orderHtmlFiles, sharesGlobalScope,
+  tilePosition, titleFromSlug,
 } from './core/html-screens';
 
 /**
@@ -43,6 +44,16 @@ export interface ScreenDef {
   base: string;
   /** Mount HTML inside a shadow root. Meaningless for component screens. */
   isolate: boolean;
+  /**
+   * This file keeps the page's global scope, so its ids are not its own.
+   *
+   * Inline `on*` handlers cannot survive being wrapped, so a file using them
+   * opts out of id scoping for the whole file — and `getElementById` then
+   * finds whichever screen mounted first. Said on the frame, because a page
+   * that works alone and misbehaves beside its own variants is otherwise a
+   * long afternoon.
+   */
+  globalScope: boolean;
   /**
    * This screen is the only one its folder produces.
    *
@@ -183,6 +194,7 @@ function build(): ScreenDef[] {
         htmlFile: file,
         base: baseFor(dir),
         isolate: manifest.isolate === true,
+        globalScope: sharesGlobalScope(html),
         external: false,
       });
     } else if (manifest.component) {
@@ -193,6 +205,7 @@ function build(): ScreenDef[] {
         htmlFile: null,
         base: baseFor(dir),
         isolate: true,
+        globalScope: false,
         external: false,
       });
     }
@@ -234,6 +247,7 @@ function build(): ScreenDef[] {
         // Light DOM. A shadow root would cut the file's own scripts off from
         // `document.getElementById`, which is how a prototype finds itself.
         isolate: false,
+        globalScope: sharesGlobalScope(files.get(file) ?? ''),
         solo,
         external: false,
       });
@@ -272,8 +286,10 @@ function build(): ScreenDef[] {
       html: page.html,
       htmlFile: rel,
       base: page.base,
-      // Light DOM unless the folder's own `lab.json` asks otherwise.
-      isolate: externalIsolate,
+      // Light DOM unless this page's own folder — or the scanned root —
+      // asked otherwise in a `lab.json`.
+      isolate: page.isolate,
+      globalScope: !page.isolate && sharesGlobalScope(page.html),
       solo: false,
       external: true,
     });

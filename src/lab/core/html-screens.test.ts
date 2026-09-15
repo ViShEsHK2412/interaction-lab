@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BODY_SCOPE, DEFAULT_HTML_SIZE, htmlScreenId, orderHtmlFiles,
   scopeCss, scopeSelectorList, tilePosition, titleFromSlug,
-  usesInlineHandlers, wrapScript, firstFreeRow,
+  usesInlineHandlers, wrapScript, firstFreeRow, sharesGlobalScope,
   splitSelectorList, scopeFor, cssSuffix, renameKeyframes,
   resolveAssetUrl, resolveSrcset, rewriteCssUrls,
 } from './html-screens';
@@ -177,6 +177,32 @@ describe('usesInlineHandlers', () => {
 
   it('says no for markup with no attributes at all', () => {
     expect(usesInlineHandlers('<div><span>hi</span></div>')).toBe(false);
+  });
+});
+
+describe('sharesGlobalScope', () => {
+  const withScript = (markup: string) => `${markup}<script>var a = 1;</script>`;
+
+  it('is true when inline handlers and inline scripts meet', () => {
+    expect(sharesGlobalScope(withScript('<button onclick="go()">x</button>'))).toBe(true);
+  });
+
+  it('is false without inline handlers — the scripts get scoped', () => {
+    expect(sharesGlobalScope(withScript('<button id="go">x</button>'))).toBe(false);
+  });
+
+  it('is false with handlers but nothing to scope', () => {
+    // No inline script means no lookups to lose, so the handlers cost nothing.
+    expect(sharesGlobalScope('<button onclick="go()">x</button>')).toBe(false);
+  });
+
+  it('does not count a script that only loads a file', () => {
+    expect(sharesGlobalScope('<button onclick="go()">x</button><script src="a.js"></script>'))
+      .toBe(false);
+  });
+
+  it('does not count an empty script tag', () => {
+    expect(sharesGlobalScope('<button onclick="go()">x</button><script></script>')).toBe(false);
   });
 });
 

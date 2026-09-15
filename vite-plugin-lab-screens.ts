@@ -98,6 +98,25 @@ function scan(root: string): Page[] {
   return out;
 }
 
+/**
+ * Does this folder ask for a shadow root?
+ *
+ * Read per folder rather than once for the scanned root, because the folder
+ * that needs it is usually a subfolder: a set of variants written with inline
+ * handlers sits in its own directory beside sets that were not. A root-only
+ * manifest made the whole canvas choose, which in practice meant nobody chose.
+ * A page inherits the root's answer when its own folder is silent.
+ */
+function isolates(dir: string, fallback: boolean): boolean {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(resolve(dir, 'lab.json'), 'utf8'),
+    ) as { isolate?: unknown };
+    if (typeof manifest.isolate === 'boolean') return manifest.isolate;
+  } catch { /* no manifest, or unreadable: inherit */ }
+  return fallback;
+}
+
 export function labScreens(): Plugin {
   const configured = process.env['LAB_SCREENS'];
   const root = configured ? real(resolve(configured)) : null;
@@ -167,11 +186,13 @@ export function labScreens(): Plugin {
         .join('\n');
       // Each page carries the URL of its own folder, so the images and
       // fonts sitting beside it still resolve once it is mounted elsewhere.
+      const isolate = isolates(root, false);
       const entries = found
         .map((p, i) => {
           const dir = p.abs.slice(0, p.abs.lastIndexOf('/') + 1);
           return `  ${JSON.stringify(p.rel)}: { html: __p${i}, `
-            + `base: ${JSON.stringify(`/@fs/${dir}`)} },`;
+            + `base: ${JSON.stringify(`/@fs/${dir}`)}, `
+            + `isolate: ${JSON.stringify(isolates(dir, isolate))} },`;
         })
         .join('\n');
 
@@ -193,14 +214,6 @@ export function labScreens(): Plugin {
        * because every run re-fetches the repo. `--demos` brings them back.
        */
       const demos = process.env['LAB_DEMOS'] === '1';
-
-      let isolate = false;
-      try {
-        const manifest = JSON.parse(
-          readFileSync(resolve(root, 'lab.json'), 'utf8'),
-        ) as { isolate?: unknown };
-        isolate = manifest.isolate === true;
-      } catch { /* no manifest, or unreadable: the default stands */ }
 
       return `${imports}
 export const root = ${JSON.stringify(root)};

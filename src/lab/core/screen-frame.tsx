@@ -239,6 +239,27 @@ function ScreenFrameInner(props: FrameProps) {
         onDoubleClick={() => onRename(def.id)}
       >
         {def.name}
+        {/*
+          Said where you will see it.
+          
+          This file keeps the page's global scope, so `getElementById` inside
+          it finds whichever screen mounted first — which on a canvas of
+          variants of one file is usually not this one. A console line is easy
+          to miss; a page that works alone and misbehaves beside its siblings
+          is not, and this is the only warning that arrives before the
+          confusion rather than after it.
+        */}
+        {def.globalScope && (
+          <span
+            className={styles.labelWarn}
+            title={"This file uses inline on* handlers, so its scripts keep the page's "
+              + "global scope and its ids are shared with every other screen. "
+              + "Move the handlers to addEventListener, or put "
+              + '{ "isolate": true } in a lab.json beside it.'}
+          >
+            shared ids
+          </span>
+        )}
       </div>
 
       {/*

@@ -180,6 +180,23 @@
  * `--accent-solid` is 5.30:1 whatever the canvas is, and it reuses the size
  * badge's treatment rather than inventing a second way to say "this one".
  */
+/*
+ * A warning that rides along with the name.
+ *
+ * Inside the label so it scales with it and cannot drift; amber rather than
+ * red because nothing is broken yet — this file simply has no id space of its
+ * own, and will only bite when two of its variants are on the canvas at once.
+ */
+.labelWarn {
+  margin-left: var(--space-tight);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #d98324;
+  color: #1a1206;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
 .label[data-selected] {
   padding: 2px var(--space-tight);
   margin-bottom: 2px;

@@ -142,8 +142,12 @@ failing.
   on your root. `window.__labWhere.active()` names the screen that owns it.
 - **A file using inline `on*` handlers keeps the global scope.** Wrapping its
   scripts would put those handlers out of reach, so it opts out of id scoping
-  and `getElementById` finds whichever screen mounted first. The console names
-  the screen when this happens.
+  and `getElementById` finds whichever screen mounted first — on a canvas of
+  variants of one file, that is usually not the screen you clicked. The frame
+  says so: an amber **shared ids** badge sits beside its label, and hovering it
+  gives the two ways out. Only a file that has both inline handlers and a
+  script of its own is marked, because that is the only combination that can
+  reach across.
 - **`window.__lab` is yours.** The lab uses `__labScreens` and `__labWhere`, so
   a prototype instrumented for a Playwright driver keeps its own readouts.
 - **The lab's own demo screens stay out of the way.** Once it is pointed at a
@@ -151,9 +155,15 @@ failing.
   mount — they are there to exercise the contract, not to sit beside the work.
   `--demos` brings them back.
 - **A folder can ask for a shadow root** with `lab.json` beside its pages:
-  `{ "isolate": true }`. Stronger isolation, at the cost of cutting the file's
-  scripts off from `document.getElementById`. Light DOM is the default for that
-  reason.
+  `{ "isolate": true }`. Read per folder, not once for the whole canvas, so a
+  subfolder of variants can opt in while the rest of the tree stays as it is; a
+  page with no manifest of its own inherits the scanned root's answer. Stronger
+  isolation, at the cost of cutting the file's scripts off from
+  `document.getElementById` — which is how a hand-written prototype finds
+  itself, so light DOM stays the default. An isolated screen is still named by
+  `__labWhere` and still has its CSS scoped: a shadow root has no `body` and no
+  `:root`, so a file's `body { background }` needs the same rewrite there as
+  anywhere else.
 
 ## Writing a prototype that behaves
 
